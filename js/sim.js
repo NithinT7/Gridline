@@ -54,16 +54,27 @@ const POLICY={
  freeTransit:{cat:"Quality of life",label:"Free transit for seniors & students",desc:"Fare-free passes for riders under 18 and over 65.",fx:{annual:.0008,transitMul:1.025},groups:{Seniors:.15,Families:.08,"Young adults":.04},sd:.25,ev:""}
 };
 SIM.POLICY=POLICY;
+const BASEKEYS=Object.keys(POLICY);
+// policies unlock over time: a starter set, two general ones each quarter, and one city-specific one
+function mergeCity(st){const cp=(window.CITY_POLICIES||{})[st.key]||{};for(const k in cp)POLICY[k]=cp[k];}
+function unlockFor(st,announce){mergeCity(st);st.unlocked=st.unlocked||[];const r=rng(st.seed*41+st.q*7);
+  if(!st.unlocked.length){const order=BASEKEYS.slice().sort(()=>r()-.5);st.baseQueue=order;st.unlocked=order.splice(0,8);}
+  const fresh=[];if(st.q>0)for(let i=0;i<2&&st.baseQueue&&st.baseQueue.length;i++)fresh.push(st.baseQueue.shift());
+  const cp=(window.CITY_POLICIES||{})[st.key]||{};for(const k in cp)if(cp[k].q===st.q)fresh.push(k);
+  for(const k of fresh)if(!st.unlocked.includes(k))st.unlocked.push(k);st.newPol=fresh;
+  if(announce&&fresh.length)news(`New policy options: ${fresh.map(k=>POLICY[k].label).join("; ")}`,"City Hall","ok");return fresh;}
+SIM.unlock=announce=>unlockFor(S,announce);
+SIM.isUnlocked=k=>!S.unlocked||S.unlocked.includes(k);
 const ADVISORS={"Chief of Staff":"Maya Okafor","Housing":"Daniel Reyes","Public safety":"Lena Park","Economy":"Victor Hale","Budget":"Priya Shah","Homelessness":"Jordan Ellis"};
 SIM.ADVISORS=ADVISORS;
-const CAT_ADV={Revenue:"Budget",Housing:"Housing","Public safety":"Public safety",Homelessness:"Homelessness",Economy:"Economy","Quality of life":"Chief of Staff"};
+const CAT_ADV={Transportation:"Chief of Staff",Revenue:"Budget",Housing:"Housing","Public safety":"Public safety",Homelessness:"Homelessness",Economy:"Economy","Quality of life":"Chief of Staff"};
 function lognorm(r,sd){let u=0;for(let i=0;i<6;i++)u+=r();const z=(u-3)/Math.sqrt(.5);return Math.exp(z*sd-sd*sd/2);}
 function effOf(st,k,sd){st.eff=st.eff||{};if(st.eff[k]==null){const r=rng((st.seed*13+k.length*7919+k.charCodeAt(0)*131)>>>0);st.eff[k]=+lognorm(r,sd==null?.3:sd).toFixed(3);}return st.eff[k];}
 SIM.effOf=k=>effOf(S,k);
 const GKEY={"Renters":0,"Homeowners":1,"Businesses":2,"Young adults":3,"Seniors":4,"Families":5};
 
 /* ---------- state ---------- */
-let S=null; SIM.state=()=>S; SIM.load=o=>{S=o;return S;};
+let S=null; SIM.state=()=>S; SIM.load=o=>{S=o;mergeCity(S);if(!S.unlocked)unlockFor(S,false);return S;};
 SIM.start=function(key,mayorName){
   const C=GEO.cities[key],b=Object.assign({},C.baseline),cp=CITYP[key];
   b.units=b.pop/cp.hhSize/(1-b.vacancy);b.hh=b.pop/cp.hhSize;
@@ -71,7 +82,7 @@ SIM.start=function(key,mayorName){
     pol:{police:1,homeless:1,transit:1,parks:1,youth:1,propTax:0,bizTax:0,rentAssist:0,vio:0,crisis:0,salesTax:0,hotelTax:0,fees:0},policies:[],reports:[],pressing:[],advisors:[],
     m:{chronic:b.homeless*.3,trans:b.homeless*.7,pop:b.pop,jobs:b.jobs,unemp:b.unemp,income:b.hhIncome,rent:b.rent,homeValue:b.homeValue,units:b.units,hh:b.hh,vacancy:b.vacancy,homeless:b.homeless,unshel:b.unsheltered,violent:b.violent,property:b.property,police:b.police,transit:b.transit,carShare:b.carShare,congestion:b.congestion,commute:b.commute,reserve:b.budget*.08,approval:54,age:b.age.slice(),inc:b.income.slice(),parkScore:0,lightV:0,lightP:0,capMul:1,congMul:cp.pricing?.97:1,carMul:1,railDone:0,hfStock:0,shelter:0,price:1,trend:1,affordable:0,revenue:b.budget,spend:b.budget,debt:0},
     projects:[],zones:[],inbox:[],news:[],hist:[],shocks:[],eventLog:[],nextId:1,decided:0,approvedN:0,deniedN:0,ended:false};
-  S.m.groups=GROUPS.map(()=>54);
+  S.m.groups=GROUPS.map(()=>54);unlockFor(S,false);
   computeIndices(S);S.idx0=Object.assign({},S.idx);
   S.hist.push(snap(S));
   return S;
@@ -270,7 +281,7 @@ SIM.advisorPitches=function(){
   const m=S.m;const r=rng(S.seed*5+S.q*53);const out=[];const act=new Set((S.policies||[]).filter(a=>a.on||POLICY[a.k].oneShot).map(a=>a.k));
   const order=GROUPS.map((g,i)=>({g,i,v:m.groups[i],d:m.groups[i]-((S.hist[S.hist.length-2]||{}).groupsSnap||[])[i]||0})).sort((a,c)=>a.v-c.v);
   const used=new Set((S.advisors||[]).map(a=>a.k));
-  const pick=(g)=>{const cand=Object.entries(POLICY).filter(([k,d])=>!act.has(k)&&!used.has(k)&&(d.groups[g]||0)>.05).map(([k,d])=>{const c=SIM.policyCost(k);const net=c.annual-c.revenue+c.once/4;
+  const pick=(g)=>{const cand=Object.entries(POLICY).filter(([k,d])=>SIM.isUnlocked(k)&&!act.has(k)&&!used.has(k)&&(d.groups[g]||0)>.05).map(([k,d])=>{const c=SIM.policyCost(k);const net=c.annual-c.revenue+c.once/4;
       return {k,d,score:d.groups[g]-Math.max(0,net)/S.base.budget*20+r()*.05-(m.reserve<0&&net>0?.2:0)};}).sort((a,c)=>c.score-a.score);return cand[0];};
   for(const o of order.slice(0,2)){const c=pick(o.g);if(!c)continue;used.add(c.k);const role=CAT_ADV[c.d.cat];
     const gain=Math.round(c.d.groups[o.g]*.55*40*1.6*.4),lo=Math.max(1,Math.round(gain*.5)),hi=Math.round(gain*1.6)+1;
@@ -279,7 +290,7 @@ SIM.advisorPitches=function(){
       pitch:`${o.g} are at ${Math.round(o.v)}%${o.v<45?" and slipping":""}. ${c.d.label} speaks directly to them. I'd expect roughly +${lo} to +${hi} points with ${o.g.toLowerCase()} within a year, though results vary.`,
       costTxt:[costs.once>0?fmt$(costs.once)+" up front":"",costs.once<0?"raises "+fmt$(-costs.once)+" once":"",costs.annual?fmt$(costs.annual)+"/yr":"",costs.revenue?"raises "+fmt$(costs.revenue)+"/yr":""].filter(Boolean).join(" · ")||"No direct cost"});}
   // budget director weighs in when money is tight
-  if(m.reserve<S.base.budget*.03||m.revenue<m.spend*.985){const k=["vacancyTax","parking","landSale","tourism","headTax"].find(k=>!act.has(k)&&!used.has(k));
+  if(m.reserve<S.base.budget*.03||m.revenue<m.spend*.985){const k=["vacancyTax","parking","landSale","tourism","headTax"].find(k=>SIM.isUnlocked(k)&&!act.has(k)&&!used.has(k));
     if(k){const d=POLICY[k],costs=SIM.policyCost(k);out.push({id:"adv"+S.q+"_"+k,k,q:S.q,group:null,role:"Budget",name:ADVISORS.Budget,pitch:`We're running ${m.revenue<m.spend?"a "+fmt$(m.spend-m.revenue)+"/yr deficit":"thin on reserves"}. ${d.label} would bring in about ${fmt$(costs.revenue||-costs.once)}${costs.revenue?"/yr":""}. Expect pushback from ${Object.entries(d.groups).filter(([g,v])=>v<0).map(([g])=>g.toLowerCase()).join(" and ")||"a few corners"}.`,costTxt:costs.revenue?"Raises "+fmt$(costs.revenue)+"/yr":"Raises "+fmt$(-costs.once)+" once"});}}
   return out.slice(0,3);
 };

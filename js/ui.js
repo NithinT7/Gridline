@@ -91,7 +91,7 @@ function renderLeft(){
       ${adv?`<div class="eyebrow">Your advisors suggest</div>${adv}`:""}
       <div class="eyebrow">Proposals awaiting your decision</div>${items||'<p class="empty">No proposals right now. Start something yourself below, or move to the next quarter.</p>'}
       <div class="eyebrow" style="margin-top:6px">Start an initiative</div>
-      <button class="btn primary" type="button" data-catalog="1" style="text-align:left">Policies & programs <span style="opacity:.75;font-weight:500">· ${Object.keys(SIMx.POLICY).length} options · ${(S.policies||[]).filter(a=>a.on).length} active</span></button>
+      <button class="btn primary" type="button" data-catalog="1" style="text-align:left">Policies & programs <span style="opacity:.75;font-weight:500">· ${Object.keys(SIMx.POLICY).filter(SIMx.isUnlocked).length} options${(S.newPol||[]).length?" ("+S.newPol.length+" new)":""} · ${(S.policies||[]).filter(a=>a.on).length} active</span></button>
       <div class="tools"><button class="btn" type="button" data-tool="upzone">Rezone an area</button><button class="btn" type="button" data-tool="park">Create a park</button><button class="btn" type="button" data-tool="buslanes">Bus lanes on a street</button><button class="btn" type="button" data-tool="ai">Ask the AI traffic planner</button></div>`;
   }else if(leftTab==="budget"){
     const TAXK=new Set(["propTax","bizTax","salesTax","hotelTax","fees"]);
@@ -294,11 +294,11 @@ $("#next").onclick=async()=>{
   renderAll();
   if(S.q===16&&!S.ended){busy=false;election();return;}
   if(rep)await reportModal(rep);
-  S.pressing=SIMx.rollEvents();S.advisors=SIMx.advisorPitches();
+  const newPol=SIMx.unlock(true);S.pressing=SIMx.rollEvents();S.advisors=SIMx.advisorPitches();
   const nNew=1+(Math.random()<.6?1:0);S.inbox.push(...SIMx.genProposals(E,nNew));setTimeout(autosave,0);
   renderAll();
   if(!$("#left").classList.contains("open"))togglePanel("#left");leftTab="desk";renderLeft();
-  toast(`<b>${SIMx.qLabel()}</b>${S.pressing.length?` · ${S.pressing.length} pressing issue${S.pressing.length>1?"s":""}`:""}${S.advisors.length?` · ${S.advisors.length} advisor suggestion${S.advisors.length>1?"s":""}`:""} · ${nNew} new proposal${nNew>1?"s":""}`);
+  toast(`<b>${SIMx.qLabel()}</b>${S.pressing.length?` · ${S.pressing.length} pressing issue${S.pressing.length>1?"s":""}`:""}${S.advisors.length?` · ${S.advisors.length} advisor suggestion${S.advisors.length>1?"s":""}`:""}${newPol.length?` · ${newPol.length} new policies`:""} · ${nNew} new proposal${nNew>1?"s":""}`);
   busy=false;
   if(S.pressing.length){await showEvent(S.pressing[0]);renderAll();}
 };
@@ -348,12 +348,12 @@ function reportModal(r){return new Promise(res=>{if(!r){res();return;}
 });}
 /* ---------- policies & programs ---------- */
 function policyCatalog(){
-  const cats={};for(const [k,d] of Object.entries(SIMx.POLICY)){(cats[d.cat]=cats[d.cat]||[]).push([k,d]);}
+  const cats={};for(const [k,d] of Object.entries(SIMx.POLICY)){if(!SIMx.isUnlocked(k))continue;(cats[d.cat]=cats[d.cat]||[]).push([k,d]);}
   const act=k=>(S.policies||[]).find(a=>a.k===k&&a.on);
   const chips=d=>Object.entries(d.groups).map(([g,v])=>`<span class="${v>0?"up":"dn"}">${g} ${v>0?"+":"−"}</span>`).join(" ");
   const cost=k=>{const c=SIMx.policyCost(k);return [c.once>0?fmt$(c.once)+" once":"",c.once<0?"+"+fmt$(-c.once)+" once":"",c.annual?fmt$(c.annual)+"/yr":"",c.revenue?"+"+fmt$(c.revenue)+"/yr":""].filter(Boolean).join(" · ")||"No direct cost";};
-  modal(`<div class="eyebrow">Mayor's toolbox</div><h2>Policies & programs</h2><p class="note">Every program has uncertain results: the real effect is revealed after it has run a couple of quarters. Group chips show who it pleases (+) or angers (−).</p>
-   ${Object.entries(cats).map(([c,list])=>`<div class="eyebrow">${c}</div><div class="plist">${list.map(([k,d])=>`<button class="card prow ${act(k)?"on":""}" type="button" data-pol="${k}"><div class="row"><b>${esc(d.label)}</b><span class="meta">${act(k)?'<span class="up">Active</span>':esc(cost(k))}</span></div><div class="meta" style="display:block">${esc(d.desc)}</div><div class="gchips">${chips(d)}</div></button>`).join("")}</div>`).join("")}
+  modal(`<div class="eyebrow">Mayor's toolbox</div><h2>Policies & programs</h2><p class="note">New options unlock every quarter, including ones specific to this city. Every program has uncertain results: the real effect is revealed after it has run a couple of quarters. Group chips show who it pleases (+) or angers (−).</p>
+   ${Object.entries(cats).map(([c,list])=>`<div class="eyebrow">${c}</div><div class="plist">${list.map(([k,d])=>`<button class="card prow ${act(k)?"on":""}" type="button" data-pol="${k}"><div class="row"><b>${(S.newPol||[]).includes(k)?'<span class="newtag">New</span> ':""}${esc(d.label)}</b><span class="meta">${act(k)?'<span class="up">Active</span>':esc(cost(k))}</span></div><div class="meta" style="display:block">${esc(d.desc)}</div><div class="gchips">${chips(d)}</div></button>`).join("")}</div>`).join("")}
    <button class="btn" type="button" data-close>Close</button>`,e=>{const b=e.target.closest("[data-pol]");if(b)policyModal(b.dataset.pol);});
 }
 function policyModal(k,adv){
