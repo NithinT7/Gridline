@@ -77,7 +77,7 @@ function initMaterials(){
   MAT.mech=new T.MeshStandardMaterial({color:0xffffff,roughness:.8});
   MAT.tank=new T.MeshStandardMaterial({color:0x8a6a4c,roughness:.95});
   MAT.pad=new T.MeshStandardMaterial({color:0xffffff,roughness:.95});
-  MAT.crown=new T.MeshStandardMaterial({color:0xffffff,roughness:.95,flatShading:true});
+  MAT.crown=new T.MeshStandardMaterial({color:0xffffff,roughness:.95});
   MAT.trunk=new T.MeshStandardMaterial({color:0x5b4636,roughness:1});
   MAT.car=new T.MeshStandardMaterial({color:0xffffff,roughness:.45,metalness:.3});
   MAT.yellow=dashMat(0xf2c230,0,1,1); MAT.white=dashMat(0xf4f4ee,9,.45,1); MAT.zebra=dashMat(0xf4f4ee,1.2,.5,.95);
