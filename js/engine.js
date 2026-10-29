@@ -572,7 +572,7 @@ function buildMeshes(){
   E.treeCap=E.trees.length+7000;
   const cg=treeCrownGeo(), tg=new T.CylinderGeometry(.18,.26,1,5).translate(0,.5,0);
   MESH.crown={mesh:new T.InstancedMesh(cg,MAT.crown,E.treeCap)};MESH.trunk={mesh:new T.InstancedMesh(tg,MAT.trunk,E.treeCap)};
-  MESH.crown.mesh.castShadow=true;MESH.crown.mesh.receiveShadow=true;MESH.crown.mesh.count=0;MESH.trunk.mesh.count=0;
+  MESH.crown.mesh.castShadow=true;MESH.crown.mesh.receiveShadow=true;MESH.crown.mesh.frustumCulled=false;MESH.trunk.mesh.frustumCulled=false;MESH.crown.mesh.count=0;MESH.trunk.mesh.count=0;
   cityG.add(MESH.crown.mesh,MESH.trunk.mesh);
   for(const t of E.trees)plantTree(t[0],t[1],t[2],t[3]);
   // parks also get trees
@@ -580,6 +580,7 @@ function buildMeshes(){
   for(let t=0;t<60000&&parkTrees<(OSM&&OSM.trees&&OSM.trees.length>500?2500:6000);t++){const x=(r()-.5)*2*EXT,z=(r()-.5)*2*EXT;if(clsAt(x,z)===2&&r()<.5){plantTree(x,z,4+r()*4,C.style.palm&&r()<.3);parkTrees++;}}
 }
 const dummy=new T.Object3D(), col=new T.Color(), YV=new T.Vector3(0,1,0);
+function pipT(x,z,P){let c=false;for(let i=0,j=P.length-1;i<P.length;j=i++){const a=P[i],b=P[j];if((a[1]>z)!==(b[1]>z)&&x<(b[0]-a[0])*(z-a[1])/(b[1]-a[1])+a[0])c=!c;}return c;}
 function treeCrownGeo(){ // three overlapping lumpy spheres merged into one natural-looking crown
   const parts=[[0,0,0,1],[.42,.28,.18,.72],[-.36,.36,-.22,.68],[.05,.62,-.05,.6]],pos=[],r=rng(5);
   for(const [ox,oy,oz,sc] of parts){const g=new T.IcosahedronGeometry(sc,1).toNonIndexed();const a=g.attributes.position;
@@ -760,7 +761,8 @@ function venueModel(L,x0,z0,main){
     const o0=at(i,1),o1=at(j,1),s0=at(i,.975),s1=at(j,.975);
     // stepped facade: base, glass concourse band set back, upper wall
     const lat=(dp[i][0]-cx)*(-ax[1])+(dp[i][1]-cz)*ax[0],isSide=Math.abs(U[i])<(umax-umin)*.36,west=dp[i][0]<cx;
-    if(lumen&&isSide&&!west){add(wall,P3(o0,0),P3(o1,0),P3(o0,h0*.18),P3(o1,h1*.18));add(glassE,P3(o0,h0*.18),P3(o1,h1*.18),P3(s0,h0*.92),P3(s1,h1*.92));add(wall,P3(s0,h0*.92),P3(s1,h1*.92),P3(s0,h0),P3(s1,h1));}
+    if(lumen&&isSide){const x0=at(i,1.07),x1=at(j,1.07);add(wall,P3(o0,0),P3(o1,0),P3(o0,h0*.45),P3(o1,h1*.45));add(face,P3(o0,h0*.45),P3(o1,h1*.45),P3(x0,h0*.55),P3(x1,h1*.55));add(west?brick:glassE,P3(x0,h0*.55),P3(x1,h1*.55),P3(x0,h0),P3(x1,h1));}
+    else if(lumen&&isSide&&!west){add(wall,P3(o0,0),P3(o1,0),P3(o0,h0*.18),P3(o1,h1*.18));add(glassE,P3(o0,h0*.18),P3(o1,h1*.18),P3(s0,h0*.92),P3(s1,h1*.92));add(wall,P3(s0,h0*.92),P3(s1,h1*.92),P3(s0,h0),P3(s1,h1));}
     else{add(lumen&&isSide&&west?brick:wall,P3(o0,0),P3(o1,0),P3(o0,h0*.34),P3(o1,h1*.34));add(wall,P3(o0,h0*.34),P3(o1,h1*.34),P3(s0,h0*.36),P3(s1,h1*.36));
       add(glass,P3(s0,h0*.36),P3(s1,h1*.36),P3(s0,h0*.62),P3(s1,h1*.62));add(wall,P3(s0,h0*.62),P3(s1,h1*.62),P3(s0,h0),P3(s1,h1));}
     if(indoor){const r0=at(i,.86),r1=at(j,.86);add(roof,P3(s0,H),P3(s1,H),P3(r0,H+6),P3(r1,H+6));add(roof,P3(r0,H+6),P3(r1,H+6),[cx,y0+H+9,cz],[cx,y0+H+9,cz]);continue;}
@@ -778,7 +780,7 @@ function venueModel(L,x0,z0,main){
     let wf=wo*kIn;if(pitch){wf=0;for(const q of pitch.pts)wf=Math.max(wf,Math.abs(-(q[0]-cx)*ax[1]+(q[1]-cz)*ax[0]));}
     const uS=nSign>0?umin:umax,uN=nSign>0?umax:umin;const ua=lerp(uS,uN,.02),ub=lerp(uS,uN,.86);
     const roofTop=[],roofEdge=[],under=[];const R=(u,v,y)=>{const q=L2(u,v);return [q[0],y0+y,q[1]];};
-    for(const sd of [-1,1]){const vIn=sd*(wf+4),vOut=sd*(wo*.99);const N=16;
+    for(const sd of [-1,1]){const vIn=sd*(wf+4),vOut=sd*(wo*1.12);const N=16;
       for(let k=0;k<N;k++){const u0=lerp(ua,ub,k/N),u1=lerp(ua,ub,(k+1)/N);const yo=H+2,yi=H+9;
         add(roofTop,R(u0,vOut,yo),R(u1,vOut,yo),R(u0,vIn,yi),R(u1,vIn,yi));add(under,R(u0,vOut,yo-1.2),R(u1,vOut,yo-1.2),R(u0,vIn,yi-1.6),R(u1,vIn,yi-1.6));
         add(roofEdge,R(u0,vIn,yi-1.6),R(u1,vIn,yi-1.6),R(u0,vIn,yi),R(u1,vIn,yi));}
@@ -788,7 +790,7 @@ function venueModel(L,x0,z0,main){
       for(let k=0;k<=28;k++){const t=k/28,u=lerp(uA,uB,t),hh=Math.sin(Math.PI*t);top.push(R(u,vA,H+10+22*hh));bot.push(R(u,vA,H+10+22*hh-4.5*hh));}
       const tube=(a,b2,r)=>{const dx=b2[0]-a[0],dy=b2[1]-a[1],dz=b2[2]-a[2],Lb=Math.hypot(dx,dy,dz);if(Lb<.1)return;const m=new T.Mesh(new T.CylinderGeometry(r,r,Lb,6),MAT.steel);m.position.set((a[0]+b2[0])/2,(a[1]+b2[1])/2,(a[2]+b2[2])/2);m.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),new T.Vector3(dx/Lb,dy/Lb,dz/Lb));m.castShadow=true;cityG.add(m);};
       for(let k=0;k<28;k++){tube(top[k],top[k+1],1.1);tube(bot[k],bot[k+1],.8);if(k%2===0)tube(top[k],bot[k],.35);}
-      for(const e of [0,28]){const q=top[e];const py=new T.Mesh(new T.BoxGeometry(9,q[1]-y0,9).translate(0,(q[1]-y0)/2,0),fmat(false,0xbfb9ae));py.position.set(q[0],y0,q[2]);py.castShadow=true;cityG.add(py);}}
+      for(const e of [0,28]){const q=top[e];const py=new T.Mesh(new T.BoxGeometry(8,q[1]-y0,8).translate(0,(q[1]-y0)/2,0),solid(0xc4c0b8,.9));py.position.set(q[0],y0,q[2]);py.castShadow=true;cityG.add(py);}}
     mk2(roofTop,0xe9e7e2,{metalness:.2,roughness:.5});mk2(under,0x8d949b);mk2(roofEdge,0xd5d2cb);}
   // retractable roof parked beside the ballpark, on rails
   if(tmo){let best=null;for(const q of dp){if(!best||q[0]>best[0])best=q;}const half=Math.sqrt(pa)*.42;const g=new T.Group();
@@ -1471,7 +1473,7 @@ function genOSM(){
   // honest check of the height estimator on buildings whose real height OSM knows
   if(errs.length){const e=errs.map(([h,s])=>Math.abs(s-h)/h).sort((a,b)=>a-b);E.heightCheck={known,total,median:e[Math.floor(e.length/2)],n:errs.length};}else E.heightCheck={known,total,median:null,n:0};
   // real mapped trees when available; otherwise generated street trees
-  if(OSM.trees&&OSM.trees.length>500){const tr=OSM.trees;const step=Math.max(1,Math.ceil(tr.length/45000));for(let k=0;k<tr.length;k+=step){const [x,z]=tr[k];const c=clsAt(x,z);if(c===1||c===2||c===3)E.trees.push([x,z,3.2+r()*3,st.palm&&r()<.5]);}return;}
+  if(OSM.trees&&OSM.trees.length>500){const tr=OSM.trees;const step=Math.max(1,Math.ceil(tr.length/45000));for(let k=0;k<tr.length;k+=step){const [x,z]=tr[k];const c=clsAt(x,z);if(OSM.ponds&&OSM.ponds.some(w=>pipT(x,z,w.pts)))continue;if(c===1||c===2||c===3)E.trees.push([x,z,3.2+r()*3,st.palm&&r()<.5]);}return;}
   const tp=(st.trees||0)*.28;
   for(const rd of OSM.roads){if(rd.fl&6||!(rd.ty>=3&&rd.ty<=5))continue;const w=roadW(rd)/2+2.2;const sp=st.palm?13:10;
     for(let k=0;k<rd.pts.length-1&&E.trees.length<26000;k++){const [x0,z0]=rd.pts[k],[x1,z1]=rd.pts[k+1];const L=Math.hypot(x1-x0,z1-z0);if(L<sp)continue;const nx=-(z1-z0)/L,nz=(x1-x0)/L;

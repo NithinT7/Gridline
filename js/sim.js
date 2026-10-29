@@ -535,17 +535,19 @@ SIM.rollEvents=function(){
   const C=GEO.cities[S.key];const r=rng(S.seed*3+S.q*17);if(S.q===0)return [];
   const ok=k=>{const e=EV[k];if(!e)return false;if(e.season&&!e.season.includes(S.q%4))return false;if(S.eventLog.slice(-6).includes(k))return false;if(k==="recession"&&S.eventLog.includes(k))return false;return true;};
   const out=[];const take=list=>{const pool=list.filter(ok);if(!pool.length)return;const k=pool[Math.floor(r()*pool.length)];S.eventLog.push(k);out.push({k,e:EV[k],id:"ev"+S.q+"_"+k});};
+  const ag=((window.AGENDA||{})[S.key]||[]).filter(a=>a.q===S.q);for(const a of ag){S.eventLog.push("ag"+a.q);out.push({k:"ag"+a.q,e:{t:a.t,d:a.d,ch:a.ch,agenda:true},id:"ev"+S.q+"_ag"});}
   const local=C.events.concat(["recession"]);
   if(r()<.06)take(local.filter(k=>DISASTERS.has(k)));              // disasters: rare
-  if(r()<.62)take(SOCIAL.concat(local.filter(k=>!DISASTERS.has(k)))); // civic, economic and social events: common
-  if(out.length<2&&r()<.18)take(SOCIAL);
+  if(r()<(ag.length?.4:.62))take(SOCIAL.concat(local.filter(k=>!DISASTERS.has(k)))); // civic, economic and social events: common
+  if(out.length<2&&!ag.length&&r()<.18)take(SOCIAL);
   return out;
 };
 SIM.rollEvent=()=>SIM.rollEvents()[0]||null;
 SIM.resolveEvent=function(ev,i){
   const c=ev.e.ch[i];const cost=c.cost==="fed"?S.base.budget*.25*.08*.25:(c.cost||0)*S.base.budget;S.m.reserve-=cost;
   const push=fx=>{for(const [k,v,q] of fx){S.shocks.push({k,v:k==="revenue"?v*S.base.budget*4:v,q});}};
-  push(c.fx);for(const g in c.g||{}){const gi=GKEY[g];if(gi!=null)S.shocks.push({k:"g"+gi,v:c.g[g],q:3});}
+  push(c.fx);if(c.enact&&SIM.enactPolicy)SIM.enactPolicy(c.enact);for(const k in c.lever||{}){S.pol[k]=+((S.pol[k]||0)+c.lever[k]).toFixed(3);}
+  for(const g in c.g||{}){const gi=GKEY[g];if(gi!=null)S.shocks.push({k:"g"+gi,v:c.g[g],q:3});}
   let outcome=null;if(c.risk){const r=rng(S.seed*11+S.q*373+i*29+ev.k.length);if(r()<c.risk[0]){push(c.risk[1]);outcome={bad:true,t:c.risk[2]};}else outcome={bad:false,t:"It worked out: the risk you took didn't materialize."};}
   S.pressing=(S.pressing||[]).filter(x=>x.id!==ev.id);
   if(outcome){(S.surprises=S.surprises||[]).push({t:ev.e.t,choice:c.l,bad:outcome.bad,text:outcome.t});}
