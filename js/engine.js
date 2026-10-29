@@ -638,6 +638,7 @@ function buildIcon(L,x0,z0){
     if(main&&(L.shape==="spire"||L.shape==="taper")){const top=topOf(main);const g=new T.Group();const sh=Math.max(6,L.h-(top-main.y-main.g));if(L.h>top-main.y+8){g.add(lmMesh(new T.CylinderGeometry(.35,Math.min(2.4,main.w*.06+.6),sh,8).translate(0,sh/2,0),MAT.steel,0,0,0));g.position.set(main.x,top,main.z);cityG.add(g);}}
     return "skip";}
   for(const b of near){if(/stadium|arena|ship/.test(L.shape)||b===main||Math.hypot(b.x-x0,b.z-z0)<R*.8)b.iconHide=true;}
+  if(L.shape==="stadium"||L.shape==="arena"){if(venueModel(L,x0,z0,main))return "done";}
   let x=x0,z=x0===undefined?0:z0,rot=-(L.rot||0)*D,w=L.w,d=L.d||L.w;
   if(main&&L.shape!=="ship"){x=main.x;z=main.z;rot=-main.a;const mw=Math.max(main.w,main.d),md=Math.min(main.w,main.d);
     if(/stadium|arena|ferry|dome|hotel/.test(L.shape)&&mw>L.w*.4&&mw<L.w*2.2){w=main.w;d=main.d;}else if(main.w<main.d)rot+=Math.PI/2;}
@@ -706,6 +707,44 @@ function buildIcon(L,x0,z0){
   g.position.set(x,y0,z);g.rotation.y=rot;cityG.add(g);
   const fp=Math.min(w*d,(main?main.A:w*d));const i=addB({x,z,w:Math.sqrt(fp),d:Math.sqrt(fp),h:Math.min(roof,h)*.85,y:y0,g:1,k:"m",u:"o",c:[.8,.8,.8],a:0,lm:true});B[i].inst=-1;B[i].lmH=h;
   lmL.push({n:L.n,h:L.h,x,z,y:y0+L.h+10});return "done";
+}
+// Stadiums, ballparks and arenas built from their real outline: sloped seating bowl, outer wall, roof ring
+function venueModel(L,x0,z0,main){
+  const pip=(x,z,P)=>{let c=false;for(let i=0,j=P.length-1;i<P.length;j=i++){const a=P[i],b=P[j];if((a[1]>z)!==(b[1]>z)&&x<(b[0]-a[0])*(z-a[1])/(b[1]-a[1])+a[0])c=!c;}return c;};
+  const cen=P=>{let x=0,z=0;for(const p of P){x+=p[0];z+=p[1];}return [x/P.length,z/P.length];};
+  const area=P=>{let A=0;for(let i=0,j=P.length-1;i<P.length;j=i++)A+=P[j][0]*P[i][1]-P[i][0]*P[j][1];return Math.abs(A/2);};
+  // 1) the field: the biggest pitch near the landmark  2) the venue: the largest building or stadium outline around that field
+  let pitch=null,pd=1e9;for(const s of OSM.sports||[]){if(s.k!=="pitch"||s.pts.length<3)continue;const A=area(s.pts);if(A<3500)continue;const c=cen(s.pts);const dd=Math.hypot(c[0]-x0,c[1]-z0)-Math.sqrt(A)*.3;if(dd<pd&&dd<300){pd=dd;pitch=s;}}
+  const fc=pitch?cen(pitch.pts):[x0,z0];let poly=null,pa=0;
+  for(const s of OSM.sports||[]){if(s.k!=="stadium"||s.pts.length<4)continue;if(pip(fc[0],fc[1],s.pts)){const A=area(s.pts);if(A>pa){pa=A;poly=s.pts;}}}
+  for(const b of B){if(!b.osm||b.kid||!b.pts||b.A<4000)continue;if(Math.hypot(b.x-fc[0],b.z-fc[1])>400)continue;const P=[];for(let k=0;k<b.pts.length;k+=2)P.push([b.pts[k],b.pts[k+1]]);if(pip(fc[0],fc[1],P)&&b.A>pa*1.05&&b.A<(pitch?area(pitch.pts)*8:1e9)){pa=b.A;poly=P;}}
+  if(!poly&&pitch){const pc=fc;poly=pitch.pts.map(p=>[pc[0]+(p[0]-pc[0])*1.65,pc[1]+(p[1]-pc[1])*1.65]);pa=area(poly);}
+  if(!poly&&main&&main.pts){poly=[];for(let k=0;k<main.pts.length;k+=2)poly.push([main.pts[k],main.pts[k+1]]);pa=area(poly);}
+  if(!poly||poly.length<4)return false;
+  const dp=[];for(let i=0;i<poly.length;i++){const a=poly[i],b=poly[(i+1)%poly.length];const n=Math.max(1,Math.ceil(Math.hypot(b[0]-a[0],b[1]-a[1])/12));for(let j=0;j<n;j++)dp.push([lerp(a[0],b[0],j/n),lerp(a[1],b[1],j/n)]);}
+  let [cx,cz]=cen(dp);if(pitch&&pip(fc[0],fc[1],dp)){cx=fc[0];cz=fc[1];}const n=dp.length;
+  const indoor=L.shape==="arena"&&!/Park|Field/.test(L.n);const ball=/Park/.test(L.n)&&!indoor;
+  const H=Math.max(22,Math.min(L.h*(indoor?.85:.82),48)),y0=Math.max(0,elevAt(cx,cz));
+  for(const b of B){if(b.osm&&!b.kid&&pip(b.x,b.z,dp))b.iconHide=true;}
+  const at=(i,t)=>[cx+(dp[i][0]-cx)*t,cz+(dp[i][1]-cz)*t];
+  const quads=[],add=(arr,a,b,c,d)=>arr.push(...a,...b,...c,...b,...d,...c);
+  const wall=[],seat=[],roof=[];
+  const kIn=pitch?clamp(Math.sqrt(area(pitch.pts)/Math.max(1,pa))*1.12,.45,.82):(ball?.66:.6);
+  for(let i=0;i<n;i++){const j=(i+1)%n;const o0=at(i,1),o1=at(j,1);
+    add(wall,[o0[0],y0,o0[1]],[o1[0],y0,o1[1]],[o0[0],y0+H,o0[1]],[o1[0],y0+H,o1[1]]);
+    if(indoor){const r0=at(i,.86),r1=at(j,.86);add(roof,[o0[0],y0+H,o0[1]],[o1[0],y0+H,o1[1]],[r0[0],y0+H+6,r0[1]],[r1[0],y0+H+6,r1[1]]);add(roof,[r0[0],y0+H+6,r0[1]],[r1[0],y0+H+6,r1[1]],[cx,y0+H+9,cz],[cx,y0+H+9,cz]);continue;}
+    const i0=at(i,kIn),i1=at(j,kIn);
+    add(seat,[o0[0],y0+H-2,o0[1]],[o1[0],y0+H-2,o1[1]],[i0[0],y0+4,i0[1]],[i1[0],y0+4,i1[1]]);
+    add(wall,[i0[0],y0,i0[1]],[i1[0],y0,i1[1]],[i0[0],y0+4,i0[1]],[i1[0],y0+4,i1[1]]);
+    const c0=at(i,.8),c1=at(j,.8);add(roof,[o0[0],y0+H,o0[1]],[o1[0],y0+H,o1[1]],[c0[0],y0+H+3,c0[1]],[c1[0],y0+H+3,c1[1]]);}
+  const mk=(arr,col,o)=>{if(!arr.length)return;const g=new T.BufferGeometry();g.setAttribute("position",new T.Float32BufferAttribute(arr,3));g.computeVertexNormals();
+    const m=new T.Mesh(g,Object.assign(new T.MeshStandardMaterial({color:new T.Color(col).convertSRGBToLinear(),roughness:.8,side:T.DoubleSide}),o||{}));m.castShadow=true;m.receiveShadow=true;cityG.add(m);};
+  mk(wall,indoor?0xc9ced3:0xd3cec4);mk(seat,ball?0x2e5e4b:/Lumen|Soldier/.test(L.n)?0x55626e:0x4b5866);mk(roof,indoor?0xe3e5e8:0xeceae6);
+  // the playing surface if OSM didn't map one
+  if(!indoor&&!(OSM.sports||[]).some(s=>s.k==="pitch"&&pip(s.pts[0][0],s.pts[0][1],dp))){const sh=new T.Shape(dp.map((p,i)=>{const q=at(i,kIn*.95);return new T.Vector2(q[0],q[1]);}));const fg=new T.ShapeGeometry(sh).rotateX(Math.PI/2);const f=new T.Mesh(fg,new T.MeshStandardMaterial({color:new T.Color(0x5d9b4b).convertSRGBToLinear(),side:T.DoubleSide}));f.position.y=y0+.3;cityG.add(f);}
+  let A=0;for(let i=0,j=dp.length-1;i<dp.length;j=i++)A+=dp[j][0]*dp[i][1]-dp[i][0]*dp[j][1];
+  const ii=addB({x:cx,z:cz,w:Math.sqrt(Math.abs(A/2)),d:Math.sqrt(Math.abs(A/2)),h:H,y:y0,g:1,k:"m",u:"c",c:[.8,.8,.8],a:0,lm:true});B[ii].inst=-1;B[ii].lmH=H;
+  lmL.push({n:L.n,h:L.h,x:cx,z:cz,y:y0+H+12});return true;
 }
 function classicLandmark(L){const save=C.landmarks;C.landmarks=[L];const before=cityG.children.length;OSM_FORCE=true;buildLandmarks();OSM_FORCE=false;C.landmarks=save;const g=cityG.children.splice(before,1)[0];lmL.pop();return g;}
 let OSM_FORCE=false;
@@ -852,7 +891,7 @@ function updateCars(dt,ttiGrid,share){
   const nVis=Math.floor(NCARS*clamp(share,.04,1));
   for(let i=0;i<NCARS;i++){const c=cars[i];
     if(c.osm&&i<nVis&&c.R){let [x,z]=carPosOSM(c);const t=ttiGrid?ttiGrid[cellOf(x,z)]:1;const v=(isHwy(c.way)?24:c.way.ty<=3?13:9)/t*3.2;stepCarOSM(c,v*dt);if(!c.R)continue;const q=carPosOSM(c);x=q[0];z=q[1];
-      dummy.position.set(x,c.way.hs?deckAt(c.way,c.seg,x,z)+.6:elevAt(x,z)+.25,z);dummy.quaternion.setFromAxisAngle(YV,Math.atan2(-q[3],q[2]));dummy.scale.set(sc,sc,sc);dummy.updateMatrix();carMesh.setMatrixAt(i,dummy.matrix);
+      dummy.position.set(x,c.way.hs?deckAt(c.way,c.seg,x,z)+.6:elevAt(x,z)+.45,z);dummy.quaternion.setFromAxisAngle(YV,Math.atan2(-q[3],q[2]));dummy.scale.set(sc,sc,sc);dummy.updateMatrix();carMesh.setMatrixAt(i,dummy.matrix);
       if(trafficView&&(i%4===(frameNo%4))){const qq=clamp((t-1)/1.5,0,1);col.setRGB(qq<.5?lerp(.15,.95,qq/.5):lerp(.95,.88,(qq-.5)/.5),qq<.5?lerp(.7,.66,qq/.5):lerp(.66,.2,(qq-.5)/.5),qq<.5?lerp(.35,.2,qq/.5):lerp(.2,.15,(qq-.5)/.5));carMesh.setColorAt(i,col.convertSRGBToLinear());}continue;}
     if(i>=nVis||!c.R){dummy.position.set(0,-999,0);dummy.scale.set(1e-4,1e-4,1e-4);dummy.updateMatrix();carMesh.setMatrixAt(i,dummy.matrix);if(!c.R&&c.r()<.05){if(c.osm)spawnCarOSM(c);else spawnCar(c);}continue;}
     let [x,z]=carPos(c);const t=ttiGrid?ttiGrid[cellOf(x,z)]:1;const v=(c.L.w>=26?15:11)/t*3.2;
@@ -1463,10 +1502,10 @@ function buildTunnels(){
     for(let i=0;i<dp.length-1;i++){const a=dp[i],b=dp[i+1];const L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(Math.floor(acc/18)%2===0)trace.push([a,b,w*.55]);acc+=L;}
     for(const end of [0,1]){const p=end?r.pts[r.pts.length-1]:r.pts[0],q=end?r.pts[r.pts.length-2]:r.pts[1];const nb=ends.get(k(p))||[];
       if(nb.some(o=>o!==r&&!(o.fl&4)))portals.push([p,Math.atan2(q[1]-p[1],q[0]-p[0]),w]);}}
-  if(trace.length){const arr=[];for(const [a,b,w] of trace){const dx=b[0]-a[0],dz=b[1]-a[1],L=Math.hypot(dx,dz)||1,ox=-dz/L*w/2,oz=dx/L*w/2;const ya=elevAt(a[0],a[1])+.14,yb=elevAt(b[0],b[1])+.14;
+  if(trace.length){const arr=[];for(const [a,b,w] of trace){const dx=b[0]-a[0],dz=b[1]-a[1],L=Math.hypot(dx,dz)||1,ox=-dz/L*w/2,oz=dx/L*w/2;const ya=elevAt(a[0],a[1])+.38,yb=elevAt(b[0],b[1])+.38;
       arr.push(a[0]+ox,ya,a[1]+oz,a[0]-ox,ya,a[1]-oz,b[0]+ox,yb,b[1]+oz,a[0]-ox,ya,a[1]-oz,b[0]-ox,yb,b[1]-oz,b[0]+ox,yb,b[1]+oz);}
     const g=new T.BufferGeometry();g.setAttribute("position",new T.Float32BufferAttribute(arr,3));
-    const m=new T.Mesh(g,new T.MeshBasicMaterial({color:0x3d4148,transparent:true,opacity:.28,depthWrite:false,side:T.DoubleSide,polygonOffset:true,polygonOffsetFactor:-3,polygonOffsetUnits:-3}));m.renderOrder=2;scene.add(m);}
+    const m=new T.Mesh(g,new T.MeshBasicMaterial({color:0x3d4148,transparent:true,opacity:.28,depthWrite:false,side:T.DoubleSide,polygonOffset:true,polygonOffsetFactor:-3,polygonOffsetUnits:-3}));m.renderOrder=4;scene.add(m);}
   const conc=new T.MeshStandardMaterial({color:new T.Color(0xc9c5bc).convertSRGBToLinear(),roughness:.9}),hole=new T.MeshBasicMaterial({color:0x0b0d10});
   for(const [p,ang,w] of portals){const g=new T.Group();const y=Math.max(0,elevAt(p[0],p[1]));
     const head=new T.Mesh(new T.BoxGeometry(2.4,9,w+8),conc);head.position.set(0,4.5,0);head.castShadow=true;g.add(head);
@@ -1514,13 +1553,20 @@ function buildOSMRoads(){
     for(let k=0;k<n-1;k++){const a=L[k],b=R[k],c=L[k+1],d=R[k+1];arr.push(...a,...b,...c,...b,...d,...c);}
     return [L,R];};
   const wall=(arr,E1,dy0,dy1)=>{for(let k=0;k<E1.length-1;k++){const a=E1[k],b=E1[k+1];arr.push(a[0],a[1]+dy0,a[2],b[0],b[1]+dy0,b[2],a[0],a[1]+dy1,a[2],b[0],b[1]+dy0,b[2],b[0],b[1]+dy1,b[2],a[0],a[1]+dy1,a[2]);}};
+  // a bridge is often split into several OSM ways (approach spans, main span): give each connected chain one deck height
+  {const par=new Map(),find=r=>{while(par.get(r)!==r){par.set(r,par.get(par.get(r)));r=par.get(r);}return r;};const at=new Map();
+   for(const r of G.ways)if(r.fl&2){par.set(r,r);for(const p of [r.pts[0],r.pts[r.pts.length-1]]){const k=G.key(p);if(at.has(k)){const a=find(at.get(k)),b=find(r);if(a!==b)par.set(a,b);}else at.set(k,r);}}
+   const hOf=r=>{let wet=false;for(let k=0;k<r.pts.length;k+=Math.max(1,Math.floor(r.pts.length/6)))if(clsAt(r.pts[k][0],r.pts[k][1])===0)wet=true;const m=r.pts[Math.floor(r.pts.length/2)];if(clsAt(m[0],m[1])===0)wet=true;
+     return r.floating?1.6:wet?Math.max(r.layer*7,r.ty<=1?38:r.ty<=4?16:8):Math.max(r.layer>1?r.layer*6.5:0,isHwy(r)?9:r.ty===6?5:6.5);};
+   const chainH=new Map();for(const r of par.keys()){const k=find(r);chainH.set(k,Math.max(chainH.get(k)||0,hOf(r)));}
+   for(const r of par.keys())r.chainH=r.floating?1.6:chainH.get(find(r));}
   const bridgeEnds=new Map();for(const r of G.ways)if(r.fl&2)for(const end of [0,1]){const k=G.key(end?r.pts[r.pts.length-1]:r.pts[0]);bridgeEnds.set(k,(bridgeEnds.get(k)||0)+1);}
   const piers=[];
   for(const r of G.ways){
     if(r.fl&4||r.ty===7||r.pts.length<2)continue;if(!r.pts.some(p=>Math.abs(p[0])<EXT-20&&Math.abs(p[1])<EXT-20))continue;const w=r.w||roadW(r);
     if(r.fl&2){ // elevated deck
       const mid=r.pts[Math.floor(r.pts.length/2)];const wet=clsAt(mid[0],mid[1])===0;
-      const H=r.floating?1.6:wet?Math.max(r.layer*7,r.ty<=1?38:r.ty<=4?16:8):Math.max(r.layer>1?r.layer*6.5:0,isHwy(r)?9:r.ty===6?5:6.5);
+      const H=r.chainH||(r.floating?1.6:wet?Math.max(r.layer*7,r.ty<=1?38:r.ty<=4?16:8):Math.max(r.layer>1?r.layer*6.5:0,isHwy(r)?9:r.ty===6?5:6.5));
       const cum=[0];for(let k=1;k<r.pts.length;k++)cum.push(cum[k-1]+Math.hypot(r.pts[k][0]-r.pts[k-1][0],r.pts[k][1]-r.pts[k-1][1]));const tot=cum[cum.length-1]||1;
       const c0=(bridgeEnds.get(G.key(r.pts[0]))||0)>1,c1=(bridgeEnds.get(G.key(r.pts[r.pts.length-1]))||0)>1;const tl=Math.min(tot/2,Math.max(40,H*11));
       const sm=u=>u*u*(3-2*u);
@@ -1532,19 +1578,20 @@ function buildOSMRoads(){
       continue;}
     if(r.ty===7||r.ty>9)continue;
     const dp=densify(r.pts,14);const ys=dp.map(p=>elevAt(p[0],p[1]));
-    if(r.ty===6){strip(pos.svc,dp,ys.map(y=>y+.09),Math.max(3,w*.75));caps.push([r.pts[0],w*.375,2],[r.pts[r.pts.length-1],w*.375,2]);continue;}
-    if(r.ty>=2&&r.ty<=5)strip(pos.walk,dp,ys.map(y=>y+.07),w+5);
-    const hw=isHwy(r)||r.ty===8;strip(hw?pos.hwy:pos.asph,dp,ys.map(y=>y+.1),w);
+    if(r.ty===6){strip(pos.svc,dp,ys.map(y=>y+.32),Math.max(3,w*.75));caps.push([r.pts[0],w*.375,2],[r.pts[r.pts.length-1],w*.375,2]);continue;}
+    if(r.ty>=2&&r.ty<=5)strip(pos.walk,dp,ys.map(y=>y+.3),w+5);
+    const hw=isHwy(r)||r.ty===8;strip(hw?pos.hwy:pos.asph,dp,ys.map(y=>y+.34),w);
     caps.push([r.pts[0],w/2,hw?1:0],[r.pts[r.pts.length-1],w/2,hw?1:0]);
     if(r.ty>=2&&r.ty<=5)caps.push([r.pts[0],w/2+2.5,3],[r.pts[r.pts.length-1],w/2+2.5,3]);
   }
   const mk=(arr,color,o)=>{if(!arr.length)return null;const g=new T.BufferGeometry();g.setAttribute("position",new T.Float32BufferAttribute(arr,3));g.computeVertexNormals();
-    const m=new T.Mesh(g,new T.MeshStandardMaterial(Object.assign({color:new T.Color(color).convertSRGBToLinear(),roughness:.92,metalness:0,side:T.DoubleSide,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1},o||{})));m.receiveShadow=true;scene.add(m);return m;};
-  const mw=mk(pos.walk,0xc4c1bb),ma=mk(pos.asph,0x5d6168,{polygonOffsetFactor:-2,polygonOffsetUnits:-2}),mh=mk(pos.hwy,0x4c5056,{polygonOffsetFactor:-2,polygonOffsetUnits:-2}),ms=mk(pos.svc,0x8a8c90,{polygonOffsetFactor:-1.5,polygonOffsetUnits:-1.5});
+    const m=new T.Mesh(g,new T.MeshStandardMaterial(Object.assign({color:new T.Color(color).convertSRGBToLinear(),roughness:.92,metalness:0,side:T.DoubleSide,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1},o||{})));m.receiveShadow=true;if(m.material.depthWrite===false)m.renderOrder=(o&&o.ro)||1;delete m.material.ro;scene.add(m);return m;};
+  // flat road layers never fight each other: they skip the depth buffer and paint in a fixed order (sidewalk < service < street), still hidden by buildings
+  const mw=mk(pos.walk,0xc4c1bb,{depthWrite:false,ro:1}),ma=mk(pos.asph,0x5d6168,{depthWrite:false,ro:3,polygonOffsetFactor:-2,polygonOffsetUnits:-2}),mh=mk(pos.hwy,0x4c5056,{depthWrite:false,ro:3,polygonOffsetFactor:-2,polygonOffsetUnits:-2}),ms=mk(pos.svc,0x8a8c90,{depthWrite:false,ro:2,polygonOffsetFactor:-1.5,polygonOffsetUnits:-1.5});
   // round caps at every way end close the notches where streets meet
   const cg=new T.CircleGeometry(1,18).rotateX(-Math.PI/2);
-  [[0,ma,.1],[1,mh,.1],[2,ms,.09],[3,mw,.07]].forEach(([kind,src,dy])=>{const L=caps.filter(c=>c[2]===kind);if(!L.length||!src)return;const im=new T.InstancedMesh(cg,src.material,L.length);
-    L.forEach(([p,rad],i)=>{dummy.position.set(p[0],elevAt(p[0],p[1])+dy,p[1]);dummy.quaternion.identity();dummy.scale.set(rad,1,rad);dummy.updateMatrix();im.setMatrixAt(i,dummy.matrix);});im.receiveShadow=true;scene.add(im);});
+  [[0,ma,.34],[1,mh,.34],[2,ms,.32],[3,mw,.3]].forEach(([kind,src,dy])=>{const L=caps.filter(c=>c[2]===kind);if(!L.length||!src)return;const im=new T.InstancedMesh(cg,src.material,L.length);
+    L.forEach(([p,rad],i)=>{dummy.position.set(p[0],elevAt(p[0],p[1])+dy,p[1]);dummy.quaternion.identity();dummy.scale.set(rad,1,rad);dummy.updateMatrix();im.setMatrixAt(i,dummy.matrix);});im.receiveShadow=true;im.renderOrder=src.renderOrder;scene.add(im);});
   const dk=mk(pos.deck,0x52565c,{polygonOffset:false});if(dk)dk.castShadow=true;const sd=mk(pos.side,0xbdbab3,{polygonOffset:false});if(sd)sd.castShadow=true;
   if(piers.length){if(!GEOK.box)GEOK.box=new T.BoxGeometry(1,1,1);const im=new T.InstancedMesh(new T.BoxGeometry(1,1,1),new T.MeshStandardMaterial({color:new T.Color(0xb5b2ab).convertSRGBToLinear(),roughness:.9}),piers.length);
     piers.forEach(([x,y,z,h,wd,a],i)=>{dummy.position.set(x,y+h/2,z);dummy.quaternion.setFromAxisAngle(YV,-a);dummy.scale.set(2.2,h,wd);dummy.updateMatrix();im.setMatrixAt(i,dummy.matrix);});
@@ -1557,7 +1604,7 @@ function trimLine(pts,d){const L=polyLen(pts);if(L<2*d+6)return null;const at=t=
 function buildOSMMarkings(){
   const solid=[],dash=[],zebra=[];
   const quad=(arr,x,z,len,wid,ang)=>{arr.push([x,z,len,wid,ang]);};
-  const piece=(arr,x0,z0,x1,z1,wid,off)=>{const L=Math.hypot(x1-x0,z1-z0);const n=Math.max(1,Math.ceil(L/14));const ang=Math.atan2(z1-z0,x1-x0);const ox=-Math.sin(ang)*off,oz=Math.cos(ang)*off;for(let k=0;k<n;k++){const ax=x0+(x1-x0)*k/n+ox,az=z0+(z1-z0)*k/n+oz,bx=x0+(x1-x0)*(k+1)/n+ox,bz=z0+(z1-z0)*(k+1)/n+oz;quad(arr,(ax+bx)/2,(az+bz)/2,L/n,wid,ang);}};
+  const piece=(arr,x0,z0,x1,z1,wid,off)=>{const L=Math.hypot(x1-x0,z1-z0);const n=Math.max(1,Math.ceil(L/8));const ang=Math.atan2(z1-z0,x1-x0);const ox=-Math.sin(ang)*off,oz=Math.cos(ang)*off;for(let k=0;k<n;k++){const ax=x0+(x1-x0)*k/n+ox,az=z0+(z1-z0)*k/n+oz,bx=x0+(x1-x0)*(k+1)/n+ox,bz=z0+(z1-z0)*(k+1)/n+oz;quad(arr,(ax+bx)/2,(az+bz)/2,L/n,wid,ang);}};
   for(const r of RGRAPH.ways){if(r.fl&6||r.ty>=5)continue;const lanes=r.lanes||RT_LANES[r.ty];const one=r.fl&1;const tp=trimLine(r.pts,r.w*.5+5);if(!tp)continue;
     for(let k=0;k<tp.length-1;k++){const [x0,z0]=tp[k],[x1,z1]=tp[k+1];
       if(isHwy(r)){for(let q=1;q<lanes;q++)piece(dash,x0,z0,x1,z1,.15,(q-lanes/2)*3.3);piece(solid,x0,z0,x1,z1,.15,lanes*1.65-.3);piece(solid,x0,z0,x1,z1,.15,-lanes*1.65+.3);continue;}
@@ -1569,7 +1616,7 @@ function buildOSMMarkings(){
     for(const o of st){const pts=o.r.pts,i0=o.end?pts.length-1:0,i1=o.end?pts.length-2:1;const a=pts[i0],b=pts[i1];const L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<14)continue;const ux=(b[0]-a[0])/L,uz=(b[1]-a[1])/L;const off=Math.max(5,o.r.w*.5+2.5);
       quad(zebra,a[0]+ux*off,a[1]+uz*off,o.r.w-2,3,Math.atan2(uz,ux)+Math.PI/2);}}
   const pg=new T.PlaneGeometry(1,1).rotateX(-Math.PI/2);
-  for(const [arr,mat] of [[solid,MAT.yellow],[dash,MAT.white],[zebra,MAT.zebra]]){if(!arr.length)continue;const m=new T.InstancedMesh(pg,mat,arr.length);arr.forEach((q,i)=>{dummy.position.set(q[0],elevAt(q[0],q[1])+.16,q[1]);dummy.quaternion.setFromAxisAngle(YV,-q[4]);dummy.scale.set(q[2],1,q[3]);dummy.updateMatrix();m.setMatrixAt(i,dummy.matrix);});m.renderOrder=1;cityG.add(m);}
+  for(const [arr,mat] of [[solid,MAT.yellow],[dash,MAT.white],[zebra,MAT.zebra]]){if(!arr.length)continue;const m=new T.InstancedMesh(pg,mat,arr.length);arr.forEach((q,i)=>{dummy.position.set(q[0],elevAt(q[0],q[1])+.42,q[1]);dummy.quaternion.setFromAxisAngle(YV,-q[4]);dummy.scale.set(q[2],1,q[3]);dummy.updateMatrix();m.setMatrixAt(i,dummy.matrix);});m.renderOrder=5;m.material.depthWrite=false;cityG.add(m);}
   E.markCount=solid.length+dash.length+zebra.length;
 }
 function osmNamedPaths(){
