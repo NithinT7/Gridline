@@ -4,11 +4,11 @@ and pack them into compact files (coordinates in local meters, 0.25 m units)."""
 import json, math, os, struct, sys, time, gzip, urllib.request, urllib.parse
 UA="GridlineMayor/1.0 (personal city-sim prototype; low volume)"
 EP="https://overpass-api.de/api/interpreter"
-CITIES={"nyc":(40.735,-73.990),"chi":(41.885,-87.635),"sf":(37.785,-122.415),"sea":(47.610,-122.330),"sd":(32.715,-117.160)}
+CITIES={"nyc":(40.735,-73.990),"chi":(41.885,-87.635),"sf":(37.785,-122.415),"sea":(47.610,-122.330),"sd":(32.715,-117.160),"nycbig":(40.785,-73.968)}
 T0=time.time();BUDGET=float(os.environ.get("BUDGET","1e9"))
 class Out(Exception):pass
 def left():return BUDGET-(time.time()-T0)
-EXT=5000.0; KZ=110540.0; Q=4.0  # quantization: 0.25 m
+EXT=float(os.environ.get("EXT","5000")); KZ=110540.0; Q=float(os.environ.get("QSCALE","4"))  # quantization: 0.25 m
 def log(*a):print(time.strftime("%H:%M:%S"),*a,flush=True)
 def query(q,tries=12):
     wait=15

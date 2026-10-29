@@ -3,7 +3,10 @@
 (function(){
 "use strict";
 const T=THREE, D=Math.PI/180;
-const EXT=5000, TEXN=2048, PX=2*EXT/TEXN, RG=500, RPX=2*EXT/RG, EG=250, NV=EG+1, EPX=2*EXT/EG, CG=64, CPX=2*EXT/CG;
+let EXT=5000, TEXN=2048, PX=2*EXT/TEXN, RG=500, RPX=2*EXT/RG, EG=250, NV=EG+1, EPX=2*EXT/EG, CG=64, CPX=2*EXT/CG;
+// each city sets its own frame size (NYC covers all of Manhattan)
+function setFrame(ext){EXT=ext;TEXN=ext>6000?3072:2048;PX=2*EXT/TEXN;RG=ext>6000?800:500;RPX=2*EXT/RG;EG=ext>6000?400:250;NV=EG+1;EPX=2*EXT/EG;CPX=2*EXT/CG;E.EXT=EXT;E.CPX=CPX;
+  if(controls){controls.maxDistance=EXT*3.2;}if(water&&water.material.uniforms)water.material.uniforms.ext.value=EXT;if(E._haze)for(const m of E._haze)m.scale.set(EXT*Math.SQRT2+250,2600,EXT*Math.SQRT2+250);}
 const clamp=(v,a,b)=>v<a?a:v>b?b:v, lerp=(a,b,t)=>a+(b-a)*t;
 function rng(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}}
 const gauss=r=>Math.sqrt(-2*Math.log(r()+1e-9))*Math.cos(2*Math.PI*r());
@@ -202,7 +205,7 @@ function prepLines(R,specs,axis,fill,fillW){
 }
 
 /* ---------- load city ---------- */
-E.load=async function(key,progress){E.key=key;
+E.load=async function(key,progress){E.key=key;setFrame(GEO.cities[key].ext||5000);OQ=GEO.cities[key].oq||.25;
   progress=progress||(()=>{});
   const tick=(t,m)=>new Promise(res=>{progress(t,m);setTimeout(res,0);});
   E.ready=false; clearCity();
@@ -566,22 +569,27 @@ function buildMeshes(){
   E.pads.forEach((p,i)=>{dummy.position.set(p.x,p.y,p.z);dummy.quaternion.setFromAxisAngle(YV,-p.a);dummy.scale.set(p.w,Math.max(.3,p.top-p.y),p.d);dummy.updateMatrix();pm.setMatrixAt(i,dummy.matrix);const n=.86+((i*7919)%13)/130;pm.setColorAt(i,col.setRGB(p.park?.36*n:.74*n,p.park?.37*n:.73*n,p.park?.39*n:.70*n).convertSRGBToLinear());});
   cityG.add(pm);
   // trees
-  E.treeCap=E.trees.length+3000;
-  const cg=new T.IcosahedronGeometry(1,1), tg=new T.CylinderGeometry(.18,.26,1,5).translate(0,.5,0);
+  E.treeCap=E.trees.length+7000;
+  const cg=treeCrownGeo(), tg=new T.CylinderGeometry(.18,.26,1,5).translate(0,.5,0);
   MESH.crown={mesh:new T.InstancedMesh(cg,MAT.crown,E.treeCap)};MESH.trunk={mesh:new T.InstancedMesh(tg,MAT.trunk,E.treeCap)};
   MESH.crown.mesh.castShadow=true;MESH.crown.mesh.receiveShadow=true;MESH.crown.mesh.count=0;MESH.trunk.mesh.count=0;
   cityG.add(MESH.crown.mesh,MESH.trunk.mesh);
   for(const t of E.trees)plantTree(t[0],t[1],t[2],t[3]);
   // parks also get trees
   const r=rng(C.seed+9);let parkTrees=0;
-  for(let t=0;t<60000&&parkTrees<6000;t++){const x=(r()-.5)*2*EXT,z=(r()-.5)*2*EXT;if(clsAt(x,z)===2&&r()<.5){plantTree(x,z,4+r()*4,C.style.palm&&r()<.3);parkTrees++;}}
+  for(let t=0;t<60000&&parkTrees<(OSM&&OSM.trees&&OSM.trees.length>500?2500:6000);t++){const x=(r()-.5)*2*EXT,z=(r()-.5)*2*EXT;if(clsAt(x,z)===2&&r()<.5){plantTree(x,z,4+r()*4,C.style.palm&&r()<.3);parkTrees++;}}
 }
 const dummy=new T.Object3D(), col=new T.Color(), YV=new T.Vector3(0,1,0);
+function treeCrownGeo(){ // three overlapping lumpy spheres merged into one natural-looking crown
+  const parts=[[0,0,0,1],[.42,.28,.18,.72],[-.36,.36,-.22,.68],[.05,.62,-.05,.6]],pos=[],r=rng(5);
+  for(const [ox,oy,oz,sc] of parts){const g=new T.IcosahedronGeometry(sc,1).toNonIndexed();const a=g.attributes.position;
+    const jit=new Map();for(let i=0;i<a.count;i++){const k=a.getX(i).toFixed(3)+a.getY(i).toFixed(3)+a.getZ(i).toFixed(3);if(!jit.has(k))jit.set(k,.88+r()*.24);const j=jit.get(k);pos.push(a.getX(i)*j+ox,a.getY(i)*j*.9+oy,a.getZ(i)*j+oz);}}
+  const g=new T.BufferGeometry();g.setAttribute("position",new T.Float32BufferAttribute(pos,3));g.computeVertexNormals();g.translate(0,-.15,0);return g;}
 function plantTree(x,z,s,palm){
   const cm=MESH.crown.mesh,tm=MESH.trunk.mesh;if(cm.count>=E.treeCap)return;const y=elevAt(x,z);const i=cm.count++;tm.count++;
   if(palm){dummy.position.set(x,y+s*3,z);dummy.scale.set(s*.9,s*.45,s*.9);}else{dummy.position.set(x,y+s*1.25,z);dummy.scale.set(s,s*1.1,s);}
-  dummy.quaternion.identity();dummy.updateMatrix();cm.setMatrixAt(i,dummy.matrix);
-  const g=((x*13.1+z*7.7)%1+1)%1;cm.setColorAt(i,col.setRGB(palm?.26:.27+g*.12,palm?.42:.43+g*.12,palm?.2:.2+g*.06).convertSRGBToLinear());
+  dummy.updateMatrix();cm.setMatrixAt(i,dummy.matrix);dummy.quaternion.identity();
+  const g=((x*13.1+z*7.7)%1+1)%1,g2=((x*3.7-z*11.3)%1+1)%1;cm.setColorAt(i,col.setRGB(palm?.26:.2+g*.12+g2*.05,palm?.42:.36+g*.12,palm?.2:.15+g*.06).convertSRGBToLinear());dummy.quaternion.setFromAxisAngle(YV,g2*6.28);
   dummy.position.set(x,y,z);dummy.scale.set(s*.5,palm?s*3:s*.8,s*.5);dummy.updateMatrix();tm.setMatrixAt(i,dummy.matrix);
   cm.instanceMatrix.needsUpdate=true;tm.instanceMatrix.needsUpdate=true;if(cm.instanceColor)cm.instanceColor.needsUpdate=true;
 }
@@ -737,6 +745,7 @@ function venueModel(L,x0,z0,main){
   const kIn=pitch?clamp(Math.sqrt(area(pitch.pts)/Math.max(1,pa))*1.12,.45,.82):(ball?.66:.6),kMid=kIn+(1-kIn)*.48;
   const lumen=/Lumen|Soldier/.test(L.n),tmo=/T-Mobile|Oracle|Petco/.test(L.n)&&!indoor;
   const P3=(q,y)=>[q[0],y0+y,q[1]];
+  const mk2=(arr,col,o)=>{if(!arr.length)return;const g=new T.BufferGeometry();g.setAttribute("position",new T.Float32BufferAttribute(arr,3));g.computeVertexNormals();const m=new T.Mesh(g,Object.assign(new T.MeshStandardMaterial({color:new T.Color(col).convertSRGBToLinear(),roughness:.8,side:T.DoubleSide}),o||{}));m.castShadow=true;m.receiveShadow=true;cityG.add(m);};
   // along-axis extent, used to drop one end of the bowl (open end zone / outfield) like the real venues
   let umin=1e9,umax=-1e9;const U=dp.map(q=>{const u=(q[0]-cx)*ax[0]+(q[1]-cz)*ax[1];umin=Math.min(umin,u);umax=Math.max(umax,u);return u;});
   let iMax=0,iMin=0;for(let i=0;i<n;i++){if(U[i]>U[iMax])iMax=i;if(U[i]<U[iMin])iMin=i;}const nSign=dp[iMax][1]<dp[iMin][1]?1:-1; // north = smaller z
@@ -762,13 +771,25 @@ function venueModel(L,x0,z0,main){
     add(seatU,P3(s0,h0-1.2),P3(s1,h1-1.2),P3(u0,h0*.47),P3(u1,h1*.47));uvU.push(pu0,18,pu1,18,pu0,0,pu1,18,pu1,0,pu0,0);
     add(wall,P3(i0,0),P3(i1,0),P3(i0,3),P3(i1,3));
     const dir=[(dp[i][0]-cx),(dp[i][1]-cz)],dl=Math.hypot(...dir)||1,side=Math.abs((dir[0]*ax[0]+dir[1]*ax[1])/dl)<.62;
-    if(lumen){const f0=fN(i),f1=fN(j);if(side&&f0>.04&&f0<.9&&f1>.04&&f1<.9){const c0=at(i,kMid-.1),c1=at(j,kMid-.1);add(roof,P3(s0,h0+2),P3(s1,h1+2),P3(c0,h0+5+(archH(f0)-H)*.25),P3(c1,h1+5+(archH(f1)-H)*.25));}}
-    else if(!lumen){const c0=at(i,.86),c1=at(j,.86);add(roof,P3(s0,h0),P3(s1,h1),P3(c0,h0+2.5),P3(c1,h1+2.5));}}
-  // Lumen Field: two great arches along the sidelines carrying the roofs
-  if(lumen){let wd=0;for(const q of dp)wd=Math.max(wd,Math.abs(-(q[0]-cx)*ax[1]+(q[1]-cz)*ax[0]));
-    for(const sd of [-1,1]){const v=sd*wd*(kMid+.12);const pts=[];const ua=umin*1.16,ub=umax*1.16;for(let k=0;k<=24;k++){const u=lerp(ua,ub,k/24);const f=nSign>0?(u-umin)/(umax-umin):1-(u-umin)/(umax-umin);pts.push([cx+ax[0]*u-ax[1]*v,y0+(k===0||k===24?H*.55:archH(f)+2),cz+ax[1]*u+ax[0]*v]);}
-      for(const e of [0,24]){const tw=new T.Mesh(new T.BoxGeometry(7,H*.55,7).translate(0,H*.275,0),MAT.steel);tw.position.set(pts[e][0],y0,pts[e][2]);tw.castShadow=true;cityG.add(tw);}
-      for(let k=0;k<24;k++){const a=pts[k],b=pts[k+1];const dx=b[0]-a[0],dy=b[1]-a[1],dz=b[2]-a[2],Lb=Math.hypot(dx,dy,dz);const m=new T.Mesh(new T.CylinderGeometry(1.6,1.6,Lb,8),MAT.steel);m.position.set((a[0]+b[0])/2,(a[1]+b[1])/2,(a[2]+b[2])/2);m.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),new T.Vector3(dx/Lb,dy/Lb,dz/Lb));m.castShadow=true;cityG.add(m);}}}
+    if(!lumen){const c0=at(i,.86),c1=at(j,.86);add(roof,P3(s0,h0),P3(s1,h1),P3(c0,h0+2.5),P3(c1,h1+2.5));}}
+  // Lumen Field: a long roof over each sideline (covering ~70% of seats, field left open), each hung from a low steel truss arch
+  //   whose ends sit on concrete pylons beyond the north and south ends of the bowl
+  if(lumen){const L2=(u,v)=>[cx+ax[0]*u-ax[1]*v,cz+ax[1]*u+ax[0]*v];let wo=0;for(const q of dp)wo=Math.max(wo,Math.abs(-(q[0]-cx)*ax[1]+(q[1]-cz)*ax[0]));
+    let wf=wo*kIn;if(pitch){wf=0;for(const q of pitch.pts)wf=Math.max(wf,Math.abs(-(q[0]-cx)*ax[1]+(q[1]-cz)*ax[0]));}
+    const uS=nSign>0?umin:umax,uN=nSign>0?umax:umin;const ua=lerp(uS,uN,.02),ub=lerp(uS,uN,.86);
+    const roofTop=[],roofEdge=[],under=[];const R=(u,v,y)=>{const q=L2(u,v);return [q[0],y0+y,q[1]];};
+    for(const sd of [-1,1]){const vIn=sd*(wf+4),vOut=sd*(wo*.99);const N=16;
+      for(let k=0;k<N;k++){const u0=lerp(ua,ub,k/N),u1=lerp(ua,ub,(k+1)/N);const yo=H+2,yi=H+9;
+        add(roofTop,R(u0,vOut,yo),R(u1,vOut,yo),R(u0,vIn,yi),R(u1,vIn,yi));add(under,R(u0,vOut,yo-1.2),R(u1,vOut,yo-1.2),R(u0,vIn,yi-1.6),R(u1,vIn,yi-1.6));
+        add(roofEdge,R(u0,vIn,yi-1.6),R(u1,vIn,yi-1.6),R(u0,vIn,yi),R(u1,vIn,yi));}
+      for(const u of [ua,ub])add(roofEdge,R(u,vOut,H+.8),R(u,vIn,H+7.4),R(u,vOut,H+2),R(u,vIn,H+9));
+      // truss arch over the middle of the roof: top and bottom chords with struts; pylons at both ends
+      const vA=sd*(wf+4+(wo-wf-4)*.45),uA=lerp(uS,uN,-.16),uB=lerp(uS,uN,1.12),top=[],bot=[];
+      for(let k=0;k<=28;k++){const t=k/28,u=lerp(uA,uB,t),hh=Math.sin(Math.PI*t);top.push(R(u,vA,H+10+22*hh));bot.push(R(u,vA,H+10+22*hh-4.5*hh));}
+      const tube=(a,b2,r)=>{const dx=b2[0]-a[0],dy=b2[1]-a[1],dz=b2[2]-a[2],Lb=Math.hypot(dx,dy,dz);if(Lb<.1)return;const m=new T.Mesh(new T.CylinderGeometry(r,r,Lb,6),MAT.steel);m.position.set((a[0]+b2[0])/2,(a[1]+b2[1])/2,(a[2]+b2[2])/2);m.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),new T.Vector3(dx/Lb,dy/Lb,dz/Lb));m.castShadow=true;cityG.add(m);};
+      for(let k=0;k<28;k++){tube(top[k],top[k+1],1.1);tube(bot[k],bot[k+1],.8);if(k%2===0)tube(top[k],bot[k],.35);}
+      for(const e of [0,28]){const q=top[e];const py=new T.Mesh(new T.BoxGeometry(9,q[1]-y0,9).translate(0,(q[1]-y0)/2,0),fmat(false,0xbfb9ae));py.position.set(q[0],y0,q[2]);py.castShadow=true;cityG.add(py);}}
+    mk2(roofTop,0xe9e7e2,{metalness:.2,roughness:.5});mk2(under,0x8d949b);mk2(roofEdge,0xd5d2cb);}
   // retractable roof parked beside the ballpark, on rails
   if(tmo){let best=null;for(const q of dp){if(!best||q[0]>best[0])best=q;}const half=Math.sqrt(pa)*.42;const g=new T.Group();
     for(let k=0;k<3;k++){const pnl=new T.Mesh(new T.CylinderGeometry(half,half,58,24,1,true,-Math.PI/2.8,Math.PI/1.4).rotateZ(Math.PI/2),new T.MeshStandardMaterial({color:new T.Color(0xd9dde0).convertSRGBToLinear(),roughness:.5,metalness:.4,side:T.DoubleSide}));
@@ -787,8 +808,8 @@ function venueModel(L,x0,z0,main){
     E._seatTex=new T.CanvasTexture(c);E._seatTex.wrapS=E._seatTex.wrapT=T.RepeatWrapping;E._seatTex.encoding=T.sRGBEncoding;}
   const mk=(arr,col,o,uv)=>{if(!arr.length)return;const g=new T.BufferGeometry();g.setAttribute("position",new T.Float32BufferAttribute(arr,3));if(uv)g.setAttribute("uv",new T.Float32BufferAttribute(uv,2));g.computeVertexNormals();
     const m=new T.Mesh(g,Object.assign(new T.MeshStandardMaterial({color:new T.Color(col).convertSRGBToLinear(),roughness:.8,side:T.DoubleSide}),o||{}));m.castShadow=true;m.receiveShadow=true;cityG.add(m);};
-  const seatC=ball?0x5f9a86:lumen?0x8ea6c2:0x9fb0c0;
-  mk(wall,indoor?0xc9ced3:lumen?0xcf9a83:0xe4e1da);mk(brick,0x9a4a3c);mk(glassE,0x6d8597,{roughness:.15,metalness:.55});mk(glass,0x7c8d99,{roughness:.2,metalness:.5});mk(seatL,seatC,{map:E._seatTex},uvL);mk(seatU,seatC,{map:E._seatTex},uvU);mk(face,0x3b4148);mk(roof,indoor?0xe3e5e8:0xf1efea,{metalness:.15,roughness:.55});
+  const seatC=ball?0x5f9a86:lumen?0x7d93ad:0x9fb0c0;
+  mk(wall,indoor?0xc9ced3:lumen?0xc9b2a4:0xe4e1da);mk(brick,0x8e4a3e);mk(glassE,0x6d8597,{roughness:.15,metalness:.55});mk(glass,0x7c8d99,{roughness:.2,metalness:.5});mk(seatL,seatC,{map:E._seatTex},uvL);mk(seatU,seatC,{map:E._seatTex},uvU);mk(face,0x3b4148);mk(roof,indoor?0xe3e5e8:0xf1efea,{metalness:.15,roughness:.55});
   // the playing surface if OSM didn't map one
   if(!indoor&&!(OSM.sports||[]).some(s=>s.k==="pitch"&&pip(s.pts[0][0],s.pts[0][1],dp))){const sh=new T.Shape(dp.map((p,i)=>{const q=at(i,kIn*.95);return new T.Vector2(q[0],q[1]);}));const fg=new T.ShapeGeometry(sh).rotateX(Math.PI/2);const f=new T.Mesh(fg,new T.MeshStandardMaterial({color:new T.Color(0x5d9b4b).convertSRGBToLinear(),side:T.DoubleSide}));f.position.y=y0+.3;cityG.add(f);}
   let A=0;for(let i=0,j=dp.length-1;i<dp.length;j=i++)A+=dp[j][0]*dp[i][1]-dp[i][0]*dp[j][1];
@@ -1241,7 +1262,7 @@ function applyEnv(){
   const top=new T.Color(0x060b14).lerp(new T.Color(W.dim<.6?0x8f9aa6:0x5b8fd3),day);
   if(W.tint){hor.lerp(new T.Color(W.tint),.5);top.lerp(new T.Color(W.tint),.35);}
   skyMesh.material.uniforms.hor.value.copy(hor);skyMesh.material.uniforms.top.value.copy(top);skyMesh.material.uniforms.sunDir.value.copy(s.v);skyMesh.material.uniforms.sunCol.value.setRGB(W.dim,W.dim*.95,W.dim*.85).multiplyScalar(day);
-  scene.fog.color.copy(hor);scene.fog.near=W.fog[0];scene.fog.far=W.fog[1];
+  scene.fog.color.copy(hor);scene.fog.near=W.fog[0]*Math.max(1,EXT/5000);scene.fog.far=W.fog[1]*Math.max(1,EXT/5000);
   const d=s.v.clone();if(d.y<.1)d.y=.1;d.normalize();E._sunV=d;
   sun.intensity=(2.5*day*W.dim)+.08;sun.color.set(el<8?0xffc9a0:0xfff4e6);if(day<.05)sun.color.set(0x8fa6d6);
   hemi.intensity=.22+.55*day*(.6+.4*W.dim);renderer.toneMappingExposure=.82+.28*day;
@@ -1353,11 +1374,12 @@ async function fetchGz(url,json){
 }
 async function loadOSM(key){
   if(E.osmDisabled||typeof fetch==="undefined")return null;
-  try{const b=E.osmBase+key;const [bb,rd,ar]=await Promise.all([fetchGz(b+"_buildings.bin.gz",false),fetchGz(b+"_roads.json.gz",true),fetchGz(b+"_areas.json.gz",true)]);return parseOSM(bb,rd,ar);}
+  try{const b=E.osmBase+key;const [bb,rd,ar,tr]=await Promise.all([fetchGz(b+"_buildings.bin.gz",false),fetchGz(b+"_roads.json.gz",true),fetchGz(b+"_areas.json.gz",true),fetchGz(b+"_trees.bin.gz",false).catch(()=>null)]);const o=parseOSM(bb,rd,ar);
+    if(tr){const dv=new Int16Array(tr);o.trees=[];for(let i=0;i<dv.length;i+=2)o.trees.push([dv[i]*OQ,dv[i+1]*OQ]);}return o;}
   catch(e){console.warn("OSM data unavailable, using the generated city:",e.message);return null;}
 }
 E.parseOSM=(bb,rd,ar)=>parseOSM(bb,rd,ar);
-const OQ=0.25;
+let OQ=0.25;
 function ptsFrom(a){const p=[];for(let i=0;i<a.length;i+=2)p.push([a[i]*OQ,a[i+1]*OQ]);return p;}
 function parseOSM(bb,rd,ar){
   const dv=new DataView(bb);if(dv.getUint32(0,true)!==0x31424c47)throw new Error("bad buildings file");
@@ -1443,12 +1465,13 @@ function genOSM(){
     B[i].inst=-1;
     // rooftop details
     if(mh<1&&hh>14&&ob.ty!==7&&r()<.3){const nk=1+(r()<.35?1:0);for(let q=0;q<nk;q++){const kw=Math.min(B[i].w*(.15+r()*.15),14),kd=Math.min(B[i].d*(.15+r()*.15),14);if(kw>1.5&&kd>1.5)addB({kid:true,par:i,kx:(r()-.5)*B[i].w*.3,kz:(r()-.5)*B[i].d*.3,x:cx,z:cz,w:kw,d:kd,h:2.5+r()*2.2,k:"k",u:"x",c:[.72,.72,.7],a,dy:0});}}
-    if(st.tank&&!glass&&hh>14&&hh<90&&r()<st.tank*.8)addB({kid:true,par:i,kx:(r()-.5)*B[i].w*.3,kz:(r()-.5)*B[i].d*.3,x:cx,z:cz,w:6,d:6,h:8,k:"t",u:"x",c:[.55,.42,.3],a,dy:2.5});
+    if(st.tank&&!glass&&hh>14&&hh<90&&r()<st.tank*.3)addB({kid:true,par:i,kx:(r()-.5)*B[i].w*.3,kz:(r()-.5)*B[i].d*.3,x:cx,z:cz,w:6,d:6,h:8,k:"t",u:"x",c:[.55,.42,.3],a,dy:2.5});
     if((ob.ty===1||(Math.abs(A)<190&&ob.ty!==4&&ob.ty!==7))&&Math.abs(A)<260&&hh<11&&!glass&&r()<Math.max(st.gable||0,S_KEY_GABLE())&&n<=10)addB({kid:true,par:i,kx:0,kz:0,x:cx,z:cz,w:B[i].w+.4,d:B[i].d+.4,h:2.4+r()*1.6,k:"r",u:"x",c:pick(pal.roof,r),a,dy:0});
   }
   // honest check of the height estimator on buildings whose real height OSM knows
   if(errs.length){const e=errs.map(([h,s])=>Math.abs(s-h)/h).sort((a,b)=>a-b);E.heightCheck={known,total,median:e[Math.floor(e.length/2)],n:errs.length};}else E.heightCheck={known,total,median:null,n:0};
-  // street trees along residential and secondary roads
+  // real mapped trees when available; otherwise generated street trees
+  if(OSM.trees&&OSM.trees.length>500){const tr=OSM.trees;const step=Math.max(1,Math.ceil(tr.length/45000));for(let k=0;k<tr.length;k+=step){const [x,z]=tr[k];const c=clsAt(x,z);if(c===1||c===2||c===3)E.trees.push([x,z,3.2+r()*3,st.palm&&r()<.5]);}return;}
   const tp=(st.trees||0)*.28;
   for(const rd of OSM.roads){if(rd.fl&6||!(rd.ty>=3&&rd.ty<=5))continue;const w=roadW(rd)/2+2.2;const sp=st.palm?13:10;
     for(let k=0;k<rd.pts.length-1&&E.trees.length<26000;k++){const [x0,z0]=rd.pts[k],[x1,z1]=rd.pts[k+1];const L=Math.hypot(x1-x0,z1-z0);if(L<sp)continue;const nx=-(z1-z0)/L,nz=(x1-x0)/L;
@@ -1457,7 +1480,7 @@ function genOSM(){
 /* merged meshes: one per 1 km tile; bottom ring + top ring per footprint, walls + triangulated roof */
 function buildOSMMeshes(){
   OCH=[];const mat=osmMat();const byChunk=new Map();
-  for(let i=0;i<B.length;i++){const b=B[i];if(!b.osm||b.iconHide)continue;const key=Math.floor((b.x+EXT)/1000)+Math.floor((b.z+EXT)/1000)*10;if(!byChunk.has(key))byChunk.set(key,[]);byChunk.get(key).push(i);}
+  for(let i=0;i<B.length;i++){const b=B[i];if(!b.osm||b.iconHide)continue;const key=Math.floor((b.x+EXT)/1000)+Math.floor((b.z+EXT)/1000)*100;if(!byChunk.has(key))byChunk.set(key,[]);byChunk.get(key).push(i);}
   for(const [key,ids] of byChunk){
     let nv=0,ni=0;for(const i of ids){const b=B[i];nv+=2*(b.n+1);ni+=6*b.n+3*(b.n-2);}
     const pos=new Float32Array(nv*3),fac=new Float32Array(nv*4),colr=new Uint8Array(nv*3),idx=new Uint32Array(ni);

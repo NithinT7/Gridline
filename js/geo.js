@@ -44,7 +44,7 @@ const polys={
  LOWERMAN:[[40.7240,-74.0200],[40.7225,-74.0110],[40.7192,-74.0020],[40.7135,-74.0040],[40.7110,-74.0000],[40.7080,-73.9960],[40.6950,-73.9960],[40.6950,-74.0200]]
 };
 G.cities.nyc={
- key:"nyc",name:"New York",state:"NY",area:"Manhattan · Brooklyn · Queens waterfront",center:[40.735,-73.990],seed:11,
+ key:"nyc",name:"New York",state:"NY",area:"All of Manhattan · Brooklyn & Queens waterfront",center:[40.785,-73.968],ext:11000,oq:.5,seed:11,
  landMode:"land",land:["MAN","BKQ","NJ","GOV","ROOS"],water:[],polys,
  rivers:[{pts:[[40.7375,-73.9612],[40.7372,-73.9500],[40.7330,-73.9400],[40.7300,-73.9300]],w:60}],
  parks:[

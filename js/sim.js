@@ -600,7 +600,7 @@ SIM.lineRiders=function(eng,stations,kind,ext){
   const S=S_(),b=S.base;const c=eng.newCatch(stations.map(s=>[s[0],s[1]]),800);
   const prop=Math.max(.45,Math.min(1.7,(1-b.carShare)/.45));
   const mul={subway:1.6,rail:1.25,streetcar:.55,brt:.5}[kind]||1;
-  const off=stations.filter(s=>Math.abs(s[0])>4900||Math.abs(s[1])>4900).length*(OFFST[S.key]||3000)*.5*(kind==="streetcar"||kind==="brt"?.4:1);
+  const off=stations.filter(s=>Math.abs(s[0])>(window.ENGINE.EXT-100)||Math.abs(s[1])>(window.ENGINE.EXT-100)).length*(OFFST[S.key]||3000)*.5*(kind==="streetcar"||kind==="brt"?.4:1);
   return Math.round(((c.res*.07+c.jobs*.1)+.3*(c.resC*.07+c.jobsC*.1))*mul*prop*(ext?1.15:1)+off);
 };
 SIM.transitProposal=function(eng,o){
