@@ -572,7 +572,7 @@ function buildMeshes(){
   E.treeCap=E.trees.length+7000;
   const cg=treeCrownGeo(), tg=new T.CylinderGeometry(.18,.26,1,5).translate(0,.5,0);
   MESH.crown={mesh:new T.InstancedMesh(cg,MAT.crown,E.treeCap)};MESH.trunk={mesh:new T.InstancedMesh(tg,MAT.trunk,E.treeCap)};
-  MESH.crown.mesh.castShadow=true;MESH.crown.mesh.receiveShadow=true;MESH.crown.mesh.frustumCulled=false;MESH.trunk.mesh.frustumCulled=false;MESH.crown.mesh.count=0;MESH.trunk.mesh.count=0;
+  MESH.crown.mesh.castShadow=true;MESH.crown.mesh.receiveShadow=true;MESH.crown.mesh.frustumCulled=false;MESH.trunk.mesh.frustumCulled=false;MESH.crown.mesh.instanceColor=new T.InstancedBufferAttribute(new Float32Array(E.treeCap*3).fill(.4),3);MESH.crown.mesh.count=0;MESH.trunk.mesh.count=0;
   cityG.add(MESH.crown.mesh,MESH.trunk.mesh);
   for(const t of E.trees)plantTree(t[0],t[1],t[2],t[3]);
   // parks also get trees
