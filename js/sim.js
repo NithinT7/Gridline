@@ -22,13 +22,53 @@ const GROUPS=["Renters","Homeowners","Businesses","Young adults","Seniors","Fami
 const AGE=["Under 18","18–34","35–64","65+"],INC=["Under $50k","$50–150k","Over $150k"];
 SIM.AGE=AGE;SIM.INC=INC;SIM.GROUPS=GROUPS;
 
+/* ---------- policies & programs the mayor can enact ----------
+   fx keys: buildMul, rentAdd (quarterly), homeValueAdd, jobsAdd, popAdd, violentMul, propertyMul, homelessInMul, exitsMul,
+   transitMul, congMul, carMul, revenue (share of budget / yr), annual (share of budget / yr), once (share of budget, one-time), parkAdd, livAdd.
+   groups: persistent satisfaction push per group while active. sd: how uncertain the real effect is (lognormal). */
+const POLICY={
+ vacancyTax:{cat:"Revenue",label:"Vacant-home tax",desc:"Tax homes and storefronts left empty more than six months.",fx:{revenue:.0025,rentAdd:-.0004},groups:{Renters:.07,Homeowners:-.07,Businesses:-.04},sd:.45,ev:"Vancouver's Empty Homes Tax cut vacancies ~36% and raised C$140M+."},
+ headTax:{cat:"Revenue",label:"Big-employer payroll tax",desc:"0.7% payroll tax on companies with more than $7M in payroll.",fx:{revenue:.012,jobsAdd:-.0007},groups:{Businesses:-.32,Renters:.06,"Young adults":.03},sd:.35,ev:"Seattle's JumpStart tax raised ~$300M/yr; critics tie it to slower downtown hiring."},
+ landSale:{cat:"Revenue",label:"Sell surplus city land",desc:"Auction underused city parcels to developers. One-time cash; more housing gets built.",fx:{once:-.006,buildMul:1.03},groups:{Renters:-.03,Businesses:.05},sd:.3,oneShot:true,ev:"Proceeds depend heavily on the market when the auction closes."},
+ parking:{cat:"Revenue",label:"Demand-based parking meters",desc:"Raise meter rates where blocks are full and extend hours.",fx:{revenue:.002,congMul:.99,carMul:.996},groups:{Businesses:-.06,Homeowners:-.04,"Young adults":.02},sd:.3,ev:"SFpark's demand pricing cut cruising for parking ~50% in pilot zones."},
+ rentStab:{cat:"Housing",label:"Rent stabilization (3% cap)",desc:"Cap yearly rent increases on existing apartments at 3%.",fx:{rentAdd:-.0045,buildMul:.86},groups:{Renters:.38,Homeowners:-.14,Businesses:-.12,"Young adults":.14},sd:.35,ev:"St. Paul's 2021 cap cut new permits sharply until it was loosened; tenants gained stability."},
+ permitFast:{cat:"Housing",label:"Permit streamlining",desc:"60-day permit clock, by-right approvals for code-compliant projects.",fx:{annual:.0008,buildMul:1.24},groups:{Businesses:.1,Homeowners:-.05,"Young adults":.05},sd:.4,ev:"Austin and Auckland saw construction jump after removing discretionary review."},
+ adu:{cat:"Housing",label:"Legalize ADUs & fourplexes",desc:"Allow backyard cottages and up to four homes on every residential lot.",fx:{buildMul:1.1,rentAdd:-.0006},groups:{Homeowners:-.1,"Young adults":.1,Renters:.05},sd:.5,ev:"Minneapolis's 2040 plan coincided with rents rising far slower than peers."},
+ socialHousing:{cat:"Housing",label:"Municipal social housing fund",desc:"Revolving fund that builds mixed-income, permanently affordable apartments.",fx:{annual:.004,buildMul:1.06,rentAdd:-.0012},groups:{Renters:.16,Homeowners:-.06,Families:.05},sd:.4,ev:"Modeled on Vienna; Montgomery County MD's version broke ground within two years."},
+ downpay:{cat:"Housing",label:"First-time homebuyer assistance",desc:"Up to $40k down-payment help for first-time buyers under 120% of median income.",fx:{annual:.0015,homeValueAdd:.0004,popAdd:.0002},groups:{"Young adults":.13,Families:.1},sd:.3,ev:"Down-payment aid raises ownership but can nudge prices up where supply is tight."},
+ bodycams:{cat:"Public safety",label:"Body cameras & use-of-force reform",desc:"Cameras for every patrol officer, new de-escalation rules, public release policy.",fx:{once:.0008,annual:.0003,violentMul:1.0},groups:{Renters:.06,"Young adults":.1,Homeowners:-.02},sd:.3,calm:true,ev:"Evidence on crime effects is mixed; complaints against officers usually fall."},
+ gunTask:{cat:"Public safety",label:"Gun violence task force",desc:"Focused deterrence: police, prosecutors and outreach target the few groups driving shootings.",fx:{annual:.0006,violentMul:.965},groups:{Families:.06,Homeowners:.05},sd:.45,ev:"Boston's Operation Ceasefire was linked to a 63% drop in youth homicides."},
+ retail:{cat:"Public safety",label:"Retail theft task force",desc:"Dedicated detectives and prosecutors for organized retail theft.",fx:{annual:.0005,propertyMul:.955},groups:{Businesses:.14,Homeowners:.04,"Young adults":-.02},sd:.4,ev:"Results depend on prosecution follow-through."},
+ visionZero:{cat:"Public safety",label:"Vision Zero street redesign",desc:"Daylighted crosswalks, protected bike lanes and speed cameras on high-injury streets.",fx:{once:.002,congMul:1.01,livAdd:2},groups:{Families:.1,"Young adults":.06,Homeowners:-.03},sd:.3,ev:"Hoboken went seven years without a traffic death after redesigning intersections."},
+ encamp:{cat:"Homelessness",label:"Encampment resolution with shelter offers",desc:"Outreach teams offer shelter or housing before clearing large encampments.",fx:{once:.001,exitsMul:1.12},groups:{Homeowners:.12,Businesses:.12,Renters:-.04},sd:.5,street:true,ev:"Outcomes hinge on having enough shelter beds; sweeps alone mostly move people around."},
+ treatment:{cat:"Homelessness",label:"Addiction treatment on demand",desc:"Same-day treatment slots and medication for opioid use disorder.",fx:{annual:.0012,exitsMul:1.08,propertyMul:.985},groups:{Families:.05,Seniors:.04,Renters:.03},sd:.45,ev:"Medication for opioid use disorder roughly halves overdose death risk."},
+ smallBiz:{cat:"Economy",label:"Small-business grants",desc:"Grants and low-interest loans for storefront businesses.",fx:{annual:.001,jobsAdd:.0003},groups:{Businesses:.15,Renters:.02},sd:.45,ev:"Returns vary widely by program design."},
+ workforce:{cat:"Economy",label:"Workforce training pipeline",desc:"Paid apprenticeships with local employers in healthcare, trades and tech.",fx:{annual:.0008,jobsAdd:.00025},groups:{"Young adults":.08,Renters:.05,Businesses:.04},sd:.4,ev:"Sectoral programs like Year Up raised earnings ~30% in randomized trials."},
+ tourism:{cat:"Economy",label:"Tourism & convention marketing",desc:"Marketing push and bids for major conventions and events.",fx:{annual:.0005,revenue:.0009,jobsAdd:.0001},groups:{Businesses:.08},sd:.5,ev:"Payoff depends on the national travel market."},
+ minWage:{cat:"Economy",label:"$20 minimum wage",desc:"Phase in a $20 minimum wage over two years.",fx:{jobsAdd:-.00025,incomeAdd:.0025},groups:{Renters:.14,"Young adults":.14,Businesses:-.2},sd:.4,ev:"Seattle's $15 studies disagree: hours fell for some workers, pay rose for most."},
+ downtown:{cat:"Economy",label:"Downtown revitalization",desc:"Events, cleaning ambassadors, lighting and storefront activation downtown.",fx:{annual:.0008,propertyMul:.985,jobsAdd:.00012,livAdd:1.5},groups:{Businesses:.1,Homeowners:.03},sd:.4,ev:""},
+ trees:{cat:"Quality of life",label:"Plant 20,000 street trees",desc:"Shade, cooler streets, cleaner air; trees take years to mature.",fx:{once:.0015,parkAdd:1.2},groups:{Families:.05,Homeowners:.04,Seniors:.03},sd:.2,oneShot:true,ev:"Tree canopy lowers summer street temperatures by several degrees."},
+ afterschool:{cat:"Quality of life",label:"After-school & summer programs",desc:"Free after-school, summer camp and teen jobs in every neighborhood.",fx:{annual:.001,violentMul:.985},groups:{Families:.16,"Young adults":.03},sd:.35,ev:"Chicago's One Summer Plus cut violent-crime arrests among participants by ~43%."},
+ libraries:{cat:"Quality of life",label:"Extended library & rec-center hours",desc:"Seven-day library hours and late-night rec centers.",fx:{annual:.0004,livAdd:1},groups:{Families:.06,Seniors:.08,"Young adults":.03},sd:.2,ev:""},
+ cleanStreets:{cat:"Quality of life",label:"Street-cleaning blitz",desc:"Daily litter pickup, graffiti removal and more public restrooms.",fx:{annual:.0006,livAdd:2,propertyMul:.995},groups:{Homeowners:.06,Businesses:.07,Seniors:.04},sd:.2,ev:""},
+ freeTransit:{cat:"Quality of life",label:"Free transit for seniors & students",desc:"Fare-free passes for riders under 18 and over 65.",fx:{annual:.0008,transitMul:1.025},groups:{Seniors:.15,Families:.08,"Young adults":.04},sd:.25,ev:""}
+};
+SIM.POLICY=POLICY;
+const ADVISORS={"Chief of Staff":"Maya Okafor","Housing":"Daniel Reyes","Public safety":"Lena Park","Economy":"Victor Hale","Budget":"Priya Shah","Homelessness":"Jordan Ellis"};
+SIM.ADVISORS=ADVISORS;
+const CAT_ADV={Revenue:"Budget",Housing:"Housing","Public safety":"Public safety",Homelessness:"Homelessness",Economy:"Economy","Quality of life":"Chief of Staff"};
+function lognorm(r,sd){let u=0;for(let i=0;i<6;i++)u+=r();const z=(u-3)/Math.sqrt(.5);return Math.exp(z*sd-sd*sd/2);}
+function effOf(st,k,sd){st.eff=st.eff||{};if(st.eff[k]==null){const r=rng((st.seed*13+k.length*7919+k.charCodeAt(0)*131)>>>0);st.eff[k]=+lognorm(r,sd==null?.3:sd).toFixed(3);}return st.eff[k];}
+SIM.effOf=k=>effOf(S,k);
+const GKEY={"Renters":0,"Homeowners":1,"Businesses":2,"Young adults":3,"Seniors":4,"Families":5};
+
 /* ---------- state ---------- */
 let S=null; SIM.state=()=>S; SIM.load=o=>{S=o;return S;};
 SIM.start=function(key,mayorName){
   const C=GEO.cities[key],b=Object.assign({},C.baseline),cp=CITYP[key];
   b.units=b.pop/cp.hhSize/(1-b.vacancy);b.hh=b.pop/cp.hhSize;
   S={key,mayor:mayorName||"Mayor",q:0,year0:2027,seed:C.seed*7+3,base:b,cp,
-    pol:{police:1,homeless:1,transit:1,parks:1,youth:1,propTax:0,bizTax:0,rentAssist:0,vio:0,crisis:0},
+    pol:{police:1,homeless:1,transit:1,parks:1,youth:1,propTax:0,bizTax:0,rentAssist:0,vio:0,crisis:0,salesTax:0,hotelTax:0,fees:0},policies:[],reports:[],pressing:[],advisors:[],
     m:{chronic:b.homeless*.3,trans:b.homeless*.7,pop:b.pop,jobs:b.jobs,unemp:b.unemp,income:b.hhIncome,rent:b.rent,homeValue:b.homeValue,units:b.units,hh:b.hh,vacancy:b.vacancy,homeless:b.homeless,unshel:b.unsheltered,violent:b.violent,property:b.property,police:b.police,transit:b.transit,carShare:b.carShare,congestion:b.congestion,commute:b.commute,reserve:b.budget*.08,approval:54,age:b.age.slice(),inc:b.income.slice(),parkScore:0,lightV:0,lightP:0,capMul:1,congMul:cp.pricing?.97:1,carMul:1,railDone:0,hfStock:0,shelter:0,price:1,trend:1,affordable:0,revenue:b.budget,spend:b.budget,debt:0},
     projects:[],zones:[],inbox:[],news:[],hist:[],shocks:[],eventLog:[],nextId:1,decided:0,approvedN:0,deniedN:0,ended:false};
   S.m.groups=GROUPS.map(()=>54);
@@ -62,7 +102,16 @@ function computeIndices(st){
 /* ---------- quarterly step ---------- */
 function shock(st,k){let v=k.endsWith("Mul")?1:0;for(const s of st.shocks)if(s.k===k)v=k.endsWith("Mul")?v*s.v:v+s.v;return v;}
 function step(st,live,hooks){
-  hooks=hooks||{};const m=st.m,b=st.base,p=st.pol,cp=st.cp;const prev=Object.assign({},m);
+  hooks=hooks||{};const m=st.m,b=st.base,p=st.pol,cp=st.cp;const prev=Object.assign({},m);prev.groups=(m.groups||[]).slice();
+  p.salesTax=p.salesTax||0;p.hotelTax=p.hotelTax||0;p.fees=p.fees||0;
+  // luck: live play (and range forecasts) get random shocks; plain forecasts use expected values
+  const noisy=live||st._noisy;const rr=noisy?rng((st.seed*31+(st.q+1)*977+(st._noisySeed||0)*7717)>>>0):null;
+  const gs=sd=>{if(!rr)return 0;let u=0;for(let i=0;i<6;i++)u+=rr();return (u-3)/Math.sqrt(.5)*sd;};
+  const pols=(st.policies||[]).filter(x=>x.on);
+  const PM=k=>{let v=1;for(const a of pols){const d=POLICY[a.k];if(d&&d.fx[k]!=null)v*=1+(d.fx[k]-1)*a.eff;}return v;};
+  const PA=k=>{let v=0;for(const a of pols){const d=POLICY[a.k];if(d&&d.fx[k]!=null)v+=d.fx[k]*(k==="annual"||k==="once"?1:a.eff);}return v;};
+  const E=k=>effOf(st,k,.3);
+  const luck={violent:gs(.035),property:gs(.03),rent:gs(.0028),jobs:gs(.0014),homeless:gs(.05),value:gs(.004),approval:gs(.7),transit:gs(.015)};
   st.q++;m.price*=1.0065;
   let newUnits=0,newOffice=0,newRiders=0,hfPlaced=0,affordable=0,capex=0;
   // projects
@@ -84,63 +133,68 @@ function step(st,live,hooks){
   for(const z of st.zones){if(z.left<=0)continue;const f=clamp(.04*market,0,.12);let d;
     if(live&&hooks.zone)d=hooks.zone(z,f);else d={dUnits:z.potUnits*f,dOffice:z.potOffice*f};
     z.left-=f;newUnits+=d.dUnits;newOffice+=d.dOffice;affordable+=d.dUnits*(z.aff||0);z.built=(z.built||0)+d.dUnits;}
-  m.units+=newUnits+m.units*(cp.build||.002);m.affordable+=affordable;
+  const buildM=PM("buildMul");m.units+=newUnits+m.units*(cp.build||.002)*buildM;m.affordable+=affordable;
   // jobs
   const bus0=st.idx0.business;
-  let gJ=b.jobGrowth+.0002*(st.idx.business-bus0)+shock(st,"jobs");
+  const jPol=PA("jobsAdd")-.0002*p.salesTax-.00004*p.hotelTax,jBiz=.0002*(st.idx.business-bus0);
+  let gJ=b.jobGrowth+jBiz+shock(st,"jobs")+jPol+luck.jobs;
   m.jobs*=1+gJ;m.jobs+=newOffice/28*.4;
   // population & housing market
   const vacPrev=m.vacancy;
-  let mig=.35*gJ+.0015*((st.idx.livability-st.idx0.livability)/10)+.002*((st.idx.afford-st.idx0.afford)/10)+shock(st,"pop");
+  let mig=.35*gJ+.0015*((st.idx.livability-st.idx0.livability)/10)+.002*((st.idx.afford-st.idx0.afford)/10)+shock(st,"pop")+PA("popAdd");
   if(vacPrev<.025)mig=Math.min(mig,mig*(vacPrev/.025));
   m.pop*=1+.0006+mig;m.hh=m.pop/cp.hhSize;
   m.vacancy=clamp(1-m.hh/m.units,.004,.2);
-  const gR=b.rentTrend+.3*(b.vacancy-m.vacancy)+.15*gJ+shock(st,"rent");
+  const rVac=.3*(b.vacancy-m.vacancy),rPol=PA("rentAdd");
+  const gR=b.rentTrend+rVac+.15*gJ+shock(st,"rent")+rPol+luck.rent;
   m.rent*=1+gR;
-  const gV=.75*gR+.15*(st.idx.safety-st.idx0.safety)/100+shock(st,"rate")*.5+m.parkScore*.0004+(p.propTax?-p.propTax*.004:0);
+  const gV=.75*gR+.15*(st.idx.safety-st.idx0.safety)/100+shock(st,"rate")*.5+m.parkScore*.0004+(p.propTax?-p.propTax*.004:0)+PA("homeValueAdd")+luck.value;
   m.homeValue*=1+gV;
   // unemployment & income
   m.unemp=clamp(b.unemp+30*(Math.log(m.pop/b.pop)-Math.log(m.jobs/b.jobs))+shock(st,"unemp"),2,16);
-  m.income*=1+.0065+.25*gJ-.0008*(m.unemp-prev.unemp)*10+(m.inc[2]-prev.inc[2])*.6;
+  m.income*=1+.0065+PA("incomeAdd")/4+.25*gJ-.0008*(m.unemp-prev.unemp)*10+(m.inc[2]-prev.inc[2])*.6;
   // homelessness (stock-flow; ~30% quarterly turnover)
   const burdenR=(m.rent/m.income)/(b.rent/b.hhIncome);
   const prevent=1-Math.min(.25,.07*p.rentAssist);
   // two pools: short-term homelessness turns over fast; chronic homelessness rarely ends without supportive housing
-  const pressure=Math.pow(burdenR,2)*(1+.04*(m.unemp-b.unemp))*prevent*shock(st,"homelessMul");
-  const svc=Math.pow(p.homeless,.3);
-  const inT=.28*b.homeless*pressure,inC=.012*b.homeless*pressure;
-  m.trans=Math.max(0,m.trans+inT-.4*svc*m.trans-shock(st,"housed"));
-  m.chronic=Math.max(0,m.chronic+inC-.04*svc*m.chronic-hfPlaced);
+  const pressure=Math.pow(burdenR,2)*(1+.04*(m.unemp-b.unemp))*prevent*shock(st,"homelessMul")*PM("homelessInMul")*Math.exp(luck.homeless);
+  const svc=Math.pow(p.homeless,.3*E("homeless"))*PM("exitsMul");hfPlaced*=Math.min(1.1,E("hf"));
+  const inT=.28*b.homeless*pressure,inC=.012*b.homeless*pressure;const exT=.4*svc*m.trans,exC=.04*svc*m.chronic;
+  m.trans=Math.max(0,m.trans+inT-exT-shock(st,"housed"));
+  m.chronic=Math.max(0,m.chronic+inC-exC-hfPlaced);
   m.homeless=m.trans+m.chronic;
   m.unshel=clamp(b.unsheltered*Math.pow(p.homeless,-.45)*(1-Math.min(.8,m.shelter/Math.max(1,b.homeless*b.unsheltered))),.02,.9);
   // police & crime
   const tgt=b.police*p.police;m.police+=clamp((tgt-m.police)*.25,-b.police*.03,b.police*.025);
   m.trend*=.9945;
-  const polE=Math.pow(m.police/b.police,-.3)*(p.crisis?1-.03*p.crisis:1);
-  const vio=[1,.96,.93,.91][p.vio]||1;const youth=1-clamp((p.youth-1)*.08,-.05,.06);
-  const econ=1+.022*(m.unemp-b.unemp);
-  m.violent=b.violent*m.trend*polE*econ*vio*youth*(1-m.lightV)*(1-m.parkScore*.002)*shock(st,"violentMul");
-  m.property=b.property*m.trend*Math.pow(polE,.8)*(1+.03*(m.unemp-b.unemp))*(p.crisis?1-.03*p.crisis:1)*(1-m.lightP)*(1-(p.parks-1)*.03)*shock(st,"propertyMul");
+  const polE=Math.pow(m.police/b.police,-.3*E("police"))*(p.crisis?1-.03*p.crisis*E("crisis"):1);
+  const vio=1-(1-([1,.96,.93,.91][p.vio]||1))*E("vio");const youth=1-clamp((p.youth-1)*.08,-.05,.06)*E("youth");
+  const econ=1+.022*(m.unemp-b.unemp);const vPol=PM("violentMul"),vEv=shock(st,"violentMul"),vLuck=Math.exp(luck.violent),light=(1-m.lightV),pkF=(1-m.parkScore*.002);
+  m.violent=b.violent*m.trend*polE*econ*vio*youth*light*pkF*vEv*vPol*vLuck;
+  m.property=b.property*m.trend*Math.pow(polE,.8)*(1+.03*(m.unemp-b.unemp))*(p.crisis?1-.03*p.crisis:1)*(1-m.lightP)*(1-(p.parks-1)*.03)*shock(st,"propertyMul")*PM("propertyMul")*Math.exp(luck.property);
+  st.fac={police:polE,econ,vio,youth,light,parks:pkF,events:vEv,policies:vPol,luck:vLuck,trend:m.trend};
   // transit, mode share, congestion
-  m.transit=(b.transit*Math.pow(p.transit,.45)*Math.pow(m.jobs/b.jobs,.7)*Math.pow(m.pop/b.pop,.3)+newRiders+(prev.extraRiders||0)+(st.freqRiders||0))*Math.pow(m.violent/b.violent,-.06)*shock(st,"transitMul");
+  m.transit=(b.transit*Math.pow(p.transit,.45)*Math.pow(m.jobs/b.jobs,.7)*Math.pow(m.pop/b.pop,.3)+newRiders+(prev.extraRiders||0)+(st.freqRiders||0))*Math.pow(m.violent/b.violent,-.06)*shock(st,"transitMul")*PM("transitMul")*Math.exp(luck.transit);
   m.extraRiders=(prev.extraRiders||0)+newRiders;
   const act=(m.pop+m.jobs)/(b.pop+b.jobs);
-  m.carShare=clamp(1-(1-b.carShare)*(m.transit/b.transit)/act,.04,.96)*m.carMul;
+  m.carShare=clamp(1-(1-b.carShare)*(m.transit/b.transit)/act,.04,.96)*m.carMul*PM("carMul");
   const demand=act*(m.carShare/b.carShare);
-  m.congestion=clamp(b.congestion*Math.pow(demand/m.capMul,1.6)*m.congMul*shock(st,"congMul"),3,95);
+  m.congestion=clamp(b.congestion*Math.pow(demand/m.capMul,1.6)*m.congMul*shock(st,"congMul")*PM("congMul"),3,95);
   m.commute=b.commute*(1+b.carShare*((1+m.congestion/100)/(1+b.congestion/100)-1))*(1-.012*m.railDone)*Math.pow(p.transit,-.05);
   // budget ($B / year, nominal)
   const B0=b.budget,inf=m.price*Math.pow(1.0025,st.q); // costs outpace inflation (wages, pensions)
   const propRev=B0*b.taxBase*Math.pow(m.homeValue/b.homeValue,.6)*(m.units/b.units)*(1+p.propTax);
   const bizRev=B0*.42*(m.jobs/b.jobs)*Math.pow(m.income/b.hhIncome,.6)*(1+p.bizTax*.85);
   const other=B0*(1-b.taxBase-.42)*inf*shock(st,"fedMul")+shock(st,"revenue");
-  m.revenue=propRev+bizRev+other;
+  const newTax=B0*inf*(.02*p.salesTax*Math.pow(m.jobs/b.jobs,.8)+.0028*p.hotelTax+.025*p.fees+PA("revenue"));
+  m.revenue=propRev+bizRev+other+newTax;
   const dep=B0*(cp.policeShare*(m.police/b.police)+cp.homeShare*p.homeless+cp.transitShare*p.transit+.015*p.parks+.03*p.youth)*inf+(st.freqCost||0)*inf;
   const fixed=B0*(1-cp.policeShare-cp.homeShare-cp.transitShare-.015-.03)*inf;
   const prog=B0*(.0012*p.rentAssist+.0008*[0,1,1.8,2.5][p.vio]+.001*p.crisis)*inf;
   let ops=0,debtSvc=0;for(const pr of st.projects){if(pr.status==="done"&&pr.annual)ops+=pr.annual;if(pr.bond&&pr.status!=="cancelled")debtSvc+=pr.bond*.07;}
   m.debt=st.projects.reduce((s,pr)=>s+(pr.bond&&pr.status!=="cancelled"?pr.bond:0),0);
-  m.spend=dep+fixed+prog+ops+debtSvc+shock(st,"cost");
+  const polCost=B0*inf*PA("annual");st.genBond=st.genBond||0;
+  m.spend=dep+fixed+prog+ops+debtSvc+polCost+st.genBond*.075+shock(st,"cost");m.debt+=st.genBond;
   m.reserve+=(m.revenue-m.spend)/4;
   // demographics
   const realRent=gR-.0065;
@@ -151,28 +205,93 @@ function step(st,live,hooks){
   computeIndices(st);
   // approval by group
   const realR=m.rent/b.rent/(m.income/b.hhIncome)-1,dHome=m.homeless/b.homeless-1,dV=m.violent/b.violent-1,dJ=m.jobs/b.jobs-1,dC=(m.congestion-b.congestion)/10,dHV=m.homeValue/b.homeValue/m.price-1,dT=m.transit/b.transit-1,pk=m.parkScore/10;
-  const sat=[
-    -2.5*realR-.8*dHome-1.2*dV+.6*dT+.3*pk,
-    1.2*dHV-4*p.propTax-1.5*dV-.25*dC-.4*dHome,
-    3*dJ-2*p.bizTax-1*dV-.3*dC+.02*(st.approvedN-st.deniedN),
-    -2*realR+1.5*dJ+.8*dT-.6*dV+.2*pk,
-    -2*dV-2*p.propTax+.3*pk-.3*dHome,
-    -1.5*dV-1.2*realR+.6*pk+.4*(p.youth-1)];
+  const pg=[0,0,0,0,0,0];for(const a of pols){const d=POLICY[a.k];for(const g in d.groups){const i=GKEY[g];if(i!=null)pg[i]+=d.groups[g]*.55;}}
+  const liv=(PA("livAdd")||0)/100,tx=p.salesTax*.06,ht=p.hotelTax*.01,fe=p.fees*.25;
+  const T=[ // each group's satisfaction terms, labeled so the quarterly report can explain moves
+    [["Rent burden",-2.5*realR],["Homelessness",-.8*dHome],["Violent crime",-1.2*dV],["Transit",.6*dT],["Parks",.3*pk],["Sales tax & fees",-tx-fe*.5],["Your policies",pg[0]],["Street life",liv]],
+    [["Home values",1.2*dHV],["Property tax",-4*p.propTax],["Violent crime",-1.5*dV],["Traffic",-.25*dC],["Homelessness",-.4*dHome],["Fees",-fe],["Your policies",pg[1]],["Street life",liv]],
+    [["Job growth",3*dJ],["Business tax",-2*p.bizTax],["Violent crime",-1*dV],["Traffic",-.3*dC],["Your approvals",.02*(st.approvedN-st.deniedN)],["Sales & hotel tax",-tx*1.2-ht*1.5-fe*.6],["Your policies",pg[2]],["Street life",liv]],
+    [["Rent burden",-2*realR],["Job growth",1.5*dJ],["Transit",.8*dT],["Violent crime",-.6*dV],["Parks",.2*pk],["Sales tax",-tx*.8],["Your policies",pg[3]]],
+    [["Violent crime",-2*dV],["Property tax",-2*p.propTax],["Parks",.3*pk],["Homelessness",-.3*dHome],["Sales tax",-tx*.6],["Your policies",pg[4]],["Street life",liv]],
+    [["Violent crime",-1.5*dV],["Rent burden",-1.2*realR],["Parks",.6*pk],["Youth programs",.4*(p.youth-1)],["Sales tax",-tx*.8],["Your policies",pg[5]],["Street life",liv]]];
+  const sat=T.map(t=>t.reduce((a,c)=>a+c[1],0));st.satTerms=T;
   const evt=shock(st,"approval");const deficit=m.reserve<0?-6:0;const honey=Math.max(0,6-st.q*.8)-.35*Math.max(0,st.q-4);
   const w=[cp.renters,1-cp.renters,.25,.3,.18,.25];let tot=0,ws=0;
-  m.groups=sat.map((s,i)=>{const v=clamp(50+40*Math.tanh(1.6*s)+evt+deficit+honey,3,97);tot+=v*w[i];ws+=w[i];return (prev.groups?prev.groups[i]*.6:50*.6)+v*.4;});
+  m.groups=sat.map((s,i)=>{const v=clamp(50+40*Math.tanh(1.6*s)+evt+deficit+honey+shock(st,"g"+i)+luck.approval,3,97);tot+=v*w[i];ws+=w[i];return (prev.groups?prev.groups[i]*.6:50*.6)+v*.4;});
   m.approval=clamp(.65*prev.approval+.35*(tot/ws),3,97);
+  if(live)buildReport(st,prev,{gJ,jBiz,jPol,gR,rVac,rPol,inT,inC,exT,exC,hfPlaced,newUnits,buildM,luck,newTax,polCost});
   // expire shocks
   st.shocks.forEach(s=>s.q--);st.shocks=st.shocks.filter(s=>s.q>0);
   st.hist.push(snap(st));
 }
 SIM.step=(live,hooks)=>step(S,live,hooks);
 
+/* ---------- quarterly report: what moved and why ---------- */
+function buildReport(st,prev,x){
+  const m=st.m,b=st.base;const r={q:st.q,lines:[],groups:[],surprises:(st.surprises||[]).splice(0),metrics:{}};
+  const ch=(k)=>prev[k]?(m[k]-prev[k])/Math.abs(prev[k]):0;
+  for(const k of ["approval","rent","homeless","violent","property","jobs","unemp","homeValue","congestion","transit","units","reserve"])r.metrics[k]={from:prev[k],to:m[k]};
+  // crime drivers (change in each factor this quarter)
+  const f=st.fac,pf=st.prevFac||f;const fl=[["Police staffing","police"],["Economy & unemployment","econ"],["Violence intervention","vio"],["Youth programs","youth"],["Street lighting","light"],["Parks","parks"],["Events & emergencies","events"],["Your policies","policies"],["Long-run trend","trend"],["Luck (unforeseen)","luck"]];
+  r.crime=fl.map(([l,k])=>({l,v:(f[k]/(pf[k]||1)-1)})).filter(o=>Math.abs(o.v)>.002).sort((a,c)=>Math.abs(c.v)-Math.abs(a.v)).slice(0,4);
+  r.crimeTotal=ch("violent");st.prevFac=Object.assign({},f);
+  r.home={inflow:x.inT+x.inC,exits:x.exT+x.exC,hf:x.hfPlaced,net:m.homeless-prev.homeless};
+  r.rent={total:x.gR,vacancy:x.rVac,jobs:.15*x.gJ,policy:x.rPol,luck:x.luck.rent,trend:b.rentTrend,newUnits:x.newUnits+prev.units*(st.cp.build||.002)*x.buildM};
+  r.jobs={total:x.gJ,climate:x.jBiz,policy:x.jPol,luck:x.luck.jobs,base:b.jobGrowth};
+  r.budget={rev:m.revenue,revPrev:prev.revenue,spend:m.spend,spendPrev:prev.spend,newTax:x.newTax,pol:x.polCost};
+  // group approval: delta and the biggest reasons
+  const T=st.satTerms,PT=st.prevSat||T;
+  r.groups=GROUPS.map((g,i)=>{const d=m.groups[i]-(prev.groups&&prev.groups[i]!=null?prev.groups[i]:m.groups[i]);
+    const rs=T[i].map((t,j)=>({l:t[0],v:t[1]-((PT[i]&&PT[i][j])?PT[i][j][1]:t[1]),lvl:t[1]})).filter(o=>Math.abs(o.v)>.004).sort((a,c)=>Math.abs(c.v)-Math.abs(a.v)).slice(0,2);
+    const ev=shock(st,"g"+i);return {g,from:prev.groups?prev.groups[i]:m.groups[i],to:m.groups[i],d,reasons:rs,ev};});
+  st.prevSat=T.map(t=>t.map(c=>c.slice()));
+  // policy effectiveness reveals after two quarters
+  r.reveals=[];for(const a of st.policies||[]){if(!a.on||a.revealed||st.q-a.q<2)continue;a.revealed=true;r.reveals.push({k:a.k,eff:a.eff});}
+  for(const k of ["vio","police","youth","homeless","crisis","hf"]){st.revealed=st.revealed||{};if(st.revealed[k]||!st.eff||st.eff[k]==null)continue;const on={vio:st.pol.vio>0,crisis:st.pol.crisis>0,police:Math.abs(st.pol.police-1)>.04,youth:st.pol.youth>1.04,homeless:st.pol.homeless>1.05,hf:st.m.hfStock>0}[k];if(!on)continue;st.revOn=st.revOn||{};st.revOn[k]=(st.revOn[k]||0)+1;if(st.revOn[k]>=3){st.revealed[k]=true;r.reveals.push({k,eff:st.eff[k],lever:true});}}
+  st.reports=st.reports||[];st.reports.push(r);if(st.reports.length>24)st.reports.shift();
+}
+
+/* ---------- enact / repeal policies ---------- */
+SIM.enactPolicy=function(k,st){st=st||S;const d=POLICY[k];if(!d)return null;st.policies=st.policies||[];
+  const ex=st.policies.find(a=>a.k===k);if(ex&&ex.on)return ex;
+  const eff=st===S?+lognorm(rng((st.seed*7+st.q*131+k.length*977)>>>0),d.sd).toFixed(3):1;
+  const a=ex||{k,q:st.q,eff};a.on=true;a.q=st.q;if(!ex)st.policies.push(a);
+  if(d.fx.once)st.m.reserve-=d.fx.once*st.base.budget*(d.fx.once>0?1:a.eff);
+  if(d.fx.parkAdd)st.m.parkScore+=d.fx.parkAdd*a.eff;if(d.street)st.m.unshel=Math.max(.02,st.m.unshel*(1-.08*a.eff));
+  if(d.oneShot){a.on=d.fx.buildMul?true:false;}
+  if(st===S)news(`Enacted: ${d.label}`,"Citywide","ok");return a;};
+SIM.repealPolicy=function(k){const a=(S.policies||[]).find(x=>x.k===k);if(!a)return;a.on=false;const d=POLICY[k];
+  for(const g in d.groups){const i=GKEY[g];if(i!=null&&d.groups[g]>0)S.shocks.push({k:"g"+i,v:-2,q:2});}news(`Repealed: ${d.label}`,"Citywide","deny");};
+SIM.policyCost=k=>{const d=POLICY[k],B0=S.base.budget;return {once:(d.fx.once||0)*B0,annual:(d.fx.annual||0)*B0,revenue:(d.fx.revenue||0)*B0};};
+SIM.issueBond=function(amtFrac){const B0=S.base.budget;const amt=B0*amtFrac;S.m.reserve+=amt;S.genBond=(S.genBond||0)+amt;S.shocks.push({k:"g1",v:-1.5,q:3},{k:"g2",v:-1,q:2});news(`Issued ${fmt$(amt)} in general obligation bonds`,"Citywide","warn");return amt;};
+
+/* ---------- advisors: targeted pitches for groups that are slipping ---------- */
+SIM.advisorPitches=function(){
+  const m=S.m;const r=rng(S.seed*5+S.q*53);const out=[];const act=new Set((S.policies||[]).filter(a=>a.on||POLICY[a.k].oneShot).map(a=>a.k));
+  const order=GROUPS.map((g,i)=>({g,i,v:m.groups[i],d:m.groups[i]-((S.hist[S.hist.length-2]||{}).groupsSnap||[])[i]||0})).sort((a,c)=>a.v-c.v);
+  const used=new Set((S.advisors||[]).map(a=>a.k));
+  const pick=(g)=>{const cand=Object.entries(POLICY).filter(([k,d])=>!act.has(k)&&!used.has(k)&&(d.groups[g]||0)>.05).map(([k,d])=>{const c=SIM.policyCost(k);const net=c.annual-c.revenue+c.once/4;
+      return {k,d,score:d.groups[g]-Math.max(0,net)/S.base.budget*20+r()*.05-(m.reserve<0&&net>0?.2:0)};}).sort((a,c)=>c.score-a.score);return cand[0];};
+  for(const o of order.slice(0,2)){const c=pick(o.g);if(!c)continue;used.add(c.k);const role=CAT_ADV[c.d.cat];
+    const gain=Math.round(c.d.groups[o.g]*.55*40*1.6*.4),lo=Math.max(1,Math.round(gain*.5)),hi=Math.round(gain*1.6)+1;
+    const costs=SIM.policyCost(c.k);
+    out.push({id:"adv"+S.q+"_"+c.k,k:c.k,q:S.q,group:o.g,role,name:ADVISORS[role],
+      pitch:`${o.g} are at ${Math.round(o.v)}%${o.v<45?" and slipping":""}. ${c.d.label} speaks directly to them. I'd expect roughly +${lo} to +${hi} points with ${o.g.toLowerCase()} within a year, though results vary.`,
+      costTxt:[costs.once>0?fmt$(costs.once)+" up front":"",costs.once<0?"raises "+fmt$(-costs.once)+" once":"",costs.annual?fmt$(costs.annual)+"/yr":"",costs.revenue?"raises "+fmt$(costs.revenue)+"/yr":""].filter(Boolean).join(" · ")||"No direct cost"});}
+  // budget director weighs in when money is tight
+  if(m.reserve<S.base.budget*.03||m.revenue<m.spend*.985){const k=["vacancyTax","parking","landSale","tourism","headTax"].find(k=>!act.has(k)&&!used.has(k));
+    if(k){const d=POLICY[k],costs=SIM.policyCost(k);out.push({id:"adv"+S.q+"_"+k,k,q:S.q,group:null,role:"Budget",name:ADVISORS.Budget,pitch:`We're running ${m.revenue<m.spend?"a "+fmt$(m.spend-m.revenue)+"/yr deficit":"thin on reserves"}. ${d.label} would bring in about ${fmt$(costs.revenue||-costs.once)}${costs.revenue?"/yr":""}. Expect pushback from ${Object.entries(d.groups).filter(([g,v])=>v<0).map(([g])=>g.toLowerCase()).join(" and ")||"a few corners"}.`,costTxt:costs.revenue?"Raises "+fmt$(costs.revenue)+"/yr":"Raises "+fmt$(-costs.once)+" once"});}}
+  return out.slice(0,3);
+};
+
 /* ---------- forecasting: run the model forward with and without a decision ---------- */
 SIM.forecast=function(apply,quarters){
   quarters=quarters||12;const keys=["rent","homeless","violent","jobs","congestion","transit","units","reserve","approval","homeValue","commute","unemp"];
-  const run=(withIt)=>{const st=clone(S);st.hist=[];st.inbox=[];st.news=[];st.shocks=st.shocks.filter(s=>true);if(withIt)apply(st);for(let i=0;i<quarters;i++)step(st,false);return st;};
-  const a=run(false),b=run(true);const out={};for(const k of keys)out[k]={base:a.m[k],with:b.m[k]};out.idx={base:a.idx,with:b.idx};return out;
+  const run=(withIt,seed)=>{const st=clone(S);st.hist=[];st.inbox=[];st.news=[];st.reports=[];st.pressing=[];st.advisors=[];if(seed){st._noisy=true;st._noisySeed=seed;}if(withIt)apply(st);for(let i=0;i<quarters;i++)step(st,false);return st;};
+  const a=run(false),b=run(true);const out={};for(const k of keys)out[k]={base:a.m[k],with:b.m[k]};out.idx={base:a.idx,with:b.idx};
+  // range of outcomes: the same decision replayed under different luck
+  const runs=[1,2,3,4,5].map(sd=>run(true,sd));for(const k of keys){const v=runs.map(r=>r.m[k]);out[k].lo=Math.min(...v);out[k].hi=Math.max(...v);}
+  out.groups={base:a.m.groups,with:b.m.groups};return out;
 };
 
 /* ---------- proposals ---------- */
@@ -301,6 +420,16 @@ SIM.decide=function(p,approve,opt,eng){
     news(`Denied: ${p.title}`,p.where,"deny");return null;}
   if(p.type==="tower"&&p.faa){news(`FAA objects to ${p.title}; developer trims it to 150 m`,p.where,"warn");p.h=150;p.spec.h=150;}
   const proj=SIM.applyProposal(S,p,opt);
+  const SG={"Housing advocates":0,"Neighborhood association":1,"Business groups":2,"Downtown business district":2,"Construction unions":2,"Transit riders":3,"Drivers":1,"Families":5,"Community groups":0,"Police reform groups":3,"Homeowners":1};
+  for(const [g,v] of Object.entries(p.support||{})){const gi=SG[g];if(gi!=null&&v)S.shocks.push({k:"g"+gi,v:v*2.5,q:3});}
+  // execution risk: overruns, delays, under- or over-performance
+  const rr=rng(S.seed*19+p.id*7919);const L={};
+  if(proj.dur>2&&rr()<(p.type==="transit"?.4:.22)){const d=1+Math.floor(rr()*(p.type==="transit"?4:3));proj.dur+=d;L.delay=d;}
+  if((proj.bond||p.type==="park")&&rr()<(p.type==="transit"?.45:.25)){const o=.1+rr()*(p.type==="transit"?.6:.35);L.overrun=o;const extra=(proj.bond||((p.cost&&p.cost.city)||0))*o;if(proj.bond)proj.bond+=extra;else S.m.reserve-=extra;}
+  if(proj.riders){const f=lognorm(rr,.3);proj.riders=Math.round(proj.riders*f);L.riders=f;}
+  if(proj.units&&p.type!=="housing"){const f=clamp(lognorm(rr,.15),.75,1.2);proj.units=Math.round(proj.units*f);}
+  if(Object.keys(L).length){proj.luck=L;const bits=[];if(L.delay)bits.push(`${L.delay} quarter${L.delay>1?"s":""} behind schedule`);if(L.overrun)bits.push(`${Math.round(L.overrun*100)}% over budget`);
+    if(bits.length)(S.surprises=S.surprises||[]).push({t:p.title,bad:true,text:`Now ${bits.join(" and ")}.`});}
   if(eng){
     if((p.type==="tower"||p.type==="housing")&&p.spec){p.spec.label=p.type==="housing"?"Supportive housing":p.title;eng.commitTower(p.spec,proj.id);}
     else if(p.type==="upzone")eng.commitZone(p.zone,proj.id);
@@ -345,18 +474,84 @@ const EV={
  kingtide:{t:"King tides flood the waterfront",d:"Unusually high tides overtop seawalls.",flood:1.6,ch:[{l:"Temporary barriers",cost:.001,fx:[]},{l:"Wait it out",cost:0,fx:[["approval",-2,1]]}]},
  recession:{t:"National recession",d:"Rising rates and falling demand hit local employers and home prices.",ch:[{l:"Stimulus: fast-track public works",cost:.01,fx:[["jobs",-.004,3],["rate",-.008,3]]},{l:"Cut spending to protect reserves",cost:0,fx:[["jobs",-.007,3],["rate",-.012,3],["approval",-3,3]]}]}
 };
+// civic & social events that can hit any city. "risk" = chance a choice backfires: [probability, effects, what happened]
+Object.assign(EV,{
+ shooting:{t:"Mass shooting in a nightlife district",d:"Five people are killed and a dozen wounded outside a bar on a Saturday night. The city wants to hear from you.",ch:[
+   {l:"Visit victims, fund trauma care and violence interrupters",cost:.0008,fx:[["violentMul",.985,3],["approval",2,2]],g:{Families:2,Renters:1}},
+   {l:"Surge police into nightlife areas",cost:.0012,fx:[["violentMul",.975,2]],g:{Homeowners:3,Businesses:2,"Young adults":-2},risk:[.3,[["approval",-3,2],["g3",-4,3]],"A heavy-handed stop during the surge went viral and sparked protests."]},
+   {l:"Push the state for tougher gun laws",cost:0,fx:[["approval",1,1]],g:{"Young adults":2,Renters:1},risk:[.55,[["approval",-2,2]],"The bill died in committee; critics said you offered words, not action."]}]},
+ officer:{t:"Police shooting sparks protests",d:"An officer shoots an unarmed man during a traffic stop. Protesters fill downtown for three nights.",ch:[
+   {l:"Release bodycam video now, order an independent probe",cost:.0003,fx:[],g:{"Young adults":4,Renters:3,Homeowners:-2},risk:[.25,[["violentMul",1.02,3]],"Officers called in sick for a week in protest; response times slipped."]},
+   {l:"Stand behind the officers pending review",cost:0,fx:[],g:{Homeowners:3,"Young adults":-5,Renters:-3},risk:[.4,[["approval",-4,2],["revenue",-.0008,1]],"Protests escalated; downtown businesses boarded up for a week."]},
+   {l:"Call for calm, wait for the investigation",cost:0,fx:[["approval",-1,2]],g:{},risk:[.35,[["approval",-3,2]],"The silence read as indifference to many residents."]}]},
+ overdose:{t:"Overdose deaths spike",d:"A potent fentanyl batch kills 40 people in a month.",ch:[
+   {l:"Open a supervised consumption site",cost:.0006,fx:[["homelessMul",.99,4]],g:{Renters:2,"Young adults":2,Homeowners:-3},risk:[.35,[["approval",-2,2]],"Federal prosecutors threatened charges; the site's opening stalled."]},
+   {l:"Expand treatment beds and naloxone everywhere",cost:.0015,fx:[["approval",2,2]],g:{Families:2,Seniors:2}},
+   {l:"Enforcement crackdown on open-air drug markets",cost:.001,fx:[["propertyMul",.98,3]],g:{Businesses:3,Homeowners:2,"Young adults":-2},risk:[.3,[["homelessMul",1.02,3]],"Dealers simply moved a few blocks; jails filled up."]}]},
+ encampFire:{t:"Fire tears through a large encampment",d:"No one dies, but dozens lose everything and smoke shuts a freeway ramp.",ch:[
+   {l:"Clear it with shelter offers for everyone",cost:.0008,fx:[],g:{Homeowners:3,Businesses:3,Renters:-1},risk:[.4,[["homelessMul",1.01,2]],"There weren't enough shelter beds; most people resettled nearby."]},
+   {l:"Bring in sanitation, services and fire safety",cost:.0004,fx:[],g:{Renters:1,Homeowners:-2,Businesses:-2}}]},
+ corruption:{t:"Department head indicted for bribery",d:"Prosecutors say your buildings commissioner took kickbacks for permits.",ch:[
+   {l:"Fire him and order a full audit",cost:.0003,fx:[["approval",1,2]],g:{}},
+   {l:"Defend him until the trial",cost:0,fx:[],g:{},risk:[.6,[["approval",-7,3]],"New wiretap evidence surfaced. Your defense became the story."]}]},
+ teachers:{t:"Teachers threaten to strike",d:"The district and union are far apart on pay and class sizes. The city's share of school funding is on the table.",ch:[
+   {l:"Put city money on the table to settle",cost:.0025,fx:[],g:{Families:4,Seniors:-1}},
+   {l:"Stay out of it",cost:0,fx:[],g:{},risk:[.55,[["g5",-8,3],["approval",-3,2]],"Teachers walked out for nine days. Parents blamed City Hall."]}]},
+ transitChaos:{t:"Viral video of chaos on transit",d:"Footage of fights and drug use on a train racks up millions of views.",ch:[
+   {l:"Transit ambassadors and police on trains",cost:.0006,fx:[["transitMul",1.01,3]],g:{Seniors:2,Families:1}},
+   {l:"Ride the train with reporters, defend the system",cost:0,fx:[],g:{"Young adults":1},risk:[.5,[["transitMul",.97,3],["approval",-2,2]],"Another incident happened the next week. Ridership dipped."]}]},
+ stadium:{t:"Pro team threatens to leave",d:"The owner wants public money for a new stadium or will move the team.",ch:[
+   {l:"Offer a public subsidy deal",cost:.012,fx:[["jobs",.0006,2]],g:{Businesses:4,Renters:-2,"Young adults":-1}},
+   {l:"Refuse public money",cost:0,fx:[],g:{Renters:2},risk:[.3,[["g2",-6,4],["revenue",-.001,4],["approval",-3,3]],"The team announced it is moving. Fans are furious."]}]},
+ ransomware:{t:"Ransomware cripples city systems",d:"Hackers lock 311, permitting and payroll and demand $5M.",ch:[
+   {l:"Pay the ransom",cost:.0004,fx:[],g:{},risk:[.4,[["approval",-4,2]],"Systems came back, then the stolen data leaked anyway."]},
+   {l:"Refuse and rebuild systems",cost:.002,fx:[["approval",1,1]],g:{Businesses:-1}}]},
+ bridge:{t:"Inspectors close a major bridge",d:"Cracks in a 1960s span force an emergency closure. Traffic is backed up for miles.",ch:[
+   {l:"Emergency repair contract, around the clock",cost:.004,fx:[["congMul",1.02,1]],g:{Homeowners:2,Businesses:2}},
+   {l:"Standard repair timeline",cost:.0015,fx:[["congMul",1.06,4]],g:{Homeowners:-2,Businesses:-3},risk:[.3,[["congMul",1.04,4]],"Contractors found more damage; the closure doubled in length."]}]},
+ rentProtest:{t:"Tenant march on City Hall",d:"Thousands rally over rent hikes and evictions, demanding you act.",ch:[
+   {l:"Meet tenant leaders, promise action",cost:0,fx:[],g:{Renters:3,"Young adults":2,Homeowners:-1},risk:[.4,[["g0",-5,3]],"Tenants say nothing changed. Trust fell further."]},
+   {l:"Fast-track eviction defense funding",cost:.001,fx:[["homelessMul",.99,4]],g:{Renters:4,"Young adults":2}},
+   {l:"Ignore it",cost:0,fx:[],g:{Renters:-4,"Young adults":-3}}]},
+ homeInvasion:{t:"High-profile home invasions",d:"A string of violent break-ins in a quiet neighborhood dominates local news.",ch:[
+   {l:"Detective task force and neighborhood patrols",cost:.0008,fx:[["propertyMul",.985,3]],g:{Homeowners:4,Seniors:3}},
+   {l:"Point to falling citywide crime numbers",cost:0,fx:[],g:{},risk:[.5,[["g1",-6,3],["g4",-5,3]],"Residents felt dismissed; a recall petition started circulating."]}]},
+ waterMain:{t:"Water main break floods downtown",d:"A 100-year-old main bursts, flooding streets and subway entrances.",ch:[
+   {l:"Repair it and fund a pipe replacement program",cost:.003,fx:[],g:{Businesses:2,Homeowners:1}},
+   {l:"Patch it",cost:.0005,fx:[],g:{},risk:[.35,[["approval",-3,2],["jobs",-.001,1]],"Another main burst a month later two blocks away."]}]},
+ startup:{t:"Local startup raises $2 billion",d:"A homegrown company plans to triple its local headcount.",ch:[{l:"Great news",cost:0,fx:[["jobs",.0025,2],["rent",.002,2]],g:{Businesses:2,"Young adults":2}}],good:true},
+ festival:{t:"Music festival draws record crowds",d:"Hotels sell out and restaurants have their best weekend in years.",ch:[{l:"Great news",cost:0,fx:[["revenue",.0015,1]],g:{Businesses:2}}],good:true},
+ potholes:{season:[1],t:"Pothole crisis after a rough winter",d:"Complaints to 311 are up 300%; drivers are furious.",ch:[
+   {l:"Pothole blitz with overtime crews",cost:.0008,fx:[],g:{Homeowners:2,Businesses:1}},
+   {l:"Normal schedule",cost:0,fx:[],g:{Homeowners:-3,Businesses:-1}}]},
+ scandalText:{t:"Leaked texts embarrass your office",d:"Your deputy mocked a council member in texts that just went public.",ch:[
+   {l:"Accept the resignation, apologize",cost:0,fx:[["approval",-1,1]],g:{}},
+   {l:"Keep the deputy, call it a private conversation",cost:0,fx:[],g:{},risk:[.5,[["approval",-5,2]],"More texts leaked. The council stalled your agenda for weeks."]}]}
+});
+const DISASTERS=new Set(["noreaster","surge","vortex","lakeflood","quake","atmos","smoke","snow","heatdome","heat","kingtide","drought"]);
+const SOCIAL=["shooting","officer","overdose","encampFire","corruption","teachers","transitChaos","stadium","ransomware","bridge","rentProtest","homeInvasion","waterMain","startup","festival","potholes","scandalText"];
 SIM.EV=EV;
-SIM.rollEvent=function(){
-  const C=GEO.cities[S.key];const r=rng(S.seed*3+S.q*17);if(S.q===0)return null;
-  const pChance=.42;if(r()>pChance)return null;
-  const pool=C.events.concat(["recession"]).filter(k=>{const e=EV[k];if(!e)return false;if(e.season&&!e.season.includes(S.q%4))return false;if(S.eventLog.slice(-4).includes(k))return false;if(k==="recession"&&S.eventLog.includes(k))return false;return true;});
-  if(!pool.length)return null;const k=pool[Math.floor(r()*pool.length)];S.eventLog.push(k);return {k,e:EV[k]};
+SIM.rollEvents=function(){
+  const C=GEO.cities[S.key];const r=rng(S.seed*3+S.q*17);if(S.q===0)return [];
+  const ok=k=>{const e=EV[k];if(!e)return false;if(e.season&&!e.season.includes(S.q%4))return false;if(S.eventLog.slice(-6).includes(k))return false;if(k==="recession"&&S.eventLog.includes(k))return false;return true;};
+  const out=[];const take=list=>{const pool=list.filter(ok);if(!pool.length)return;const k=pool[Math.floor(r()*pool.length)];S.eventLog.push(k);out.push({k,e:EV[k],id:"ev"+S.q+"_"+k});};
+  const local=C.events.concat(["recession"]);
+  if(r()<.06)take(local.filter(k=>DISASTERS.has(k)));              // disasters: rare
+  if(r()<.62)take(SOCIAL.concat(local.filter(k=>!DISASTERS.has(k)))); // civic, economic and social events: common
+  if(out.length<2&&r()<.18)take(SOCIAL);
+  return out;
 };
+SIM.rollEvent=()=>SIM.rollEvents()[0]||null;
 SIM.resolveEvent=function(ev,i){
   const c=ev.e.ch[i];const cost=c.cost==="fed"?S.base.budget*.25*.08*.25:(c.cost||0)*S.base.budget;S.m.reserve-=cost;
-  for(const [k,v,q] of c.fx){S.shocks.push({k,v:k==="revenue"?v*S.base.budget*4:v,q});}
+  const push=fx=>{for(const [k,v,q] of fx){S.shocks.push({k,v:k==="revenue"?v*S.base.budget*4:v,q});}};
+  push(c.fx);for(const g in c.g||{}){const gi=GKEY[g];if(gi!=null)S.shocks.push({k:"g"+gi,v:c.g[g],q:3});}
+  let outcome=null;if(c.risk){const r=rng(S.seed*11+S.q*373+i*29+ev.k.length);if(r()<c.risk[0]){push(c.risk[1]);outcome={bad:true,t:c.risk[2]};}else outcome={bad:false,t:"It worked out: the risk you took didn't materialize."};}
+  S.pressing=(S.pressing||[]).filter(x=>x.id!==ev.id);
+  if(outcome){(S.surprises=S.surprises||[]).push({t:ev.e.t,choice:c.l,bad:outcome.bad,text:outcome.t});}
   if(ev.k==="surge"||ev.k==="kingtide"){if(S.resilience){S.shocks.push({k:"approval",v:2,q:2});news("Resilience upgrades limited flood damage","Waterfront","ok");}}
   news(`${ev.e.t}: ${c.l}`,"Citywide",ev.e.good?"ok":"warn");
+  if(outcome&&outcome.bad)news(outcome.t,"Citywide","warn");return outcome;
 };
 function news(t,where,kind){S.news.unshift({q:S.q,t,where,kind});if(S.news.length>60)S.news.pop();}
 SIM.news=news;
@@ -372,9 +567,12 @@ SIM.LEVERS=[
  {k:"vio",label:"Community violence intervention",min:0,max:3,step:1,fmt:v=>["None","Pilot","Citywide","Intensive"][v],note:"Outreach workers mediate disputes in the highest-risk blocks."},
  {k:"crisis",label:"Crisis response teams",min:0,max:2,step:1,fmt:v=>["None","Pilot","Citywide"][v],note:"Clinicians respond to mental-health calls instead of police."},
  {k:"propTax",label:"Property tax rate change",min:-.15,max:.25,step:.05,fmt:v=>(v>=0?"+":"")+Math.round(v*100)+"%",note:"Changes property tax revenue; homeowners notice quickly."},
- {k:"bizTax",label:"Business tax rate change",min:-.2,max:.2,step:.05,fmt:v=>(v>=0?"+":"")+Math.round(v*100)+"%",note:"Higher taxes raise revenue but weaken the business climate."}];
+ {k:"bizTax",label:"Business tax rate change",min:-.2,max:.2,step:.05,fmt:v=>(v>=0?"+":"")+Math.round(v*100)+"%",note:"Higher taxes raise revenue but weaken the business climate."},
+ {k:"salesTax",label:"Local sales tax",min:-.5,max:1.5,step:.25,fmt:v=>(v>=0?"+":"")+v.toFixed(2)+" pts",note:"Each point raises ~2% of the budget. Regressive: renters and young adults feel it; retail hiring slows slightly."},
+ {k:"hotelTax",label:"Hotel & visitor tax",min:0,max:5,step:1,fmt:v=>"+"+v+" pts",note:"Visitors pay most of it. Each point raises ~0.3% of the budget; hotels and tourism businesses push back."},
+ {k:"fees",label:"Permit, parking & service fees",min:0,max:.5,step:.1,fmt:v=>"+"+Math.round(v*100)+"%",note:"Quick revenue; homeowners and businesses notice."}];
 SIM.setLever=(k,v)=>{S.pol[k]=v;};
-SIM.leverCost=function(k,v){const b=S.base,cp=S.cp;const B0=b.budget;switch(k){case"police":return B0*cp.policeShare*(v-1);case"homeless":return B0*cp.homeShare*(v-1);case"transit":return B0*cp.transitShare*(v-1);case"parks":return B0*.015*(v-1);case"youth":return B0*.03*(v-1);case"rentAssist":return B0*.0012*v;case"vio":return B0*.0008*[0,1,1.8,2.5][v];case"crisis":return B0*.001*v;case"propTax":return -B0*b.taxBase*v;case"bizTax":return -B0*.42*v*.85;}return 0;};
+SIM.leverCost=function(k,v){const b=S.base,cp=S.cp;const B0=b.budget;switch(k){case"police":return B0*cp.policeShare*(v-1);case"homeless":return B0*cp.homeShare*(v-1);case"transit":return B0*cp.transitShare*(v-1);case"parks":return B0*.015*(v-1);case"youth":return B0*.03*(v-1);case"rentAssist":return B0*.0012*v;case"vio":return B0*.0008*[0,1,1.8,2.5][v];case"crisis":return B0*.001*v;case"propTax":return -B0*b.taxBase*v;case"bizTax":return -B0*.42*v*.85;case"salesTax":return -B0*.02*v;case"hotelTax":return -B0*.0028*v;case"fees":return -B0*.025*v;}return 0;};
 })();
 /* ---------- mayor-initiated proposals ---------- */
 (function(){

@@ -43,7 +43,7 @@ async function startGame(key,name,saved){
     E.setEnv({month:MONTH_OF_Q[S.q%4],hour:10,wx:"clear",flood:0});}
   else{S=SIMx.start(key,name);S.elog=[];
   E.setEnv({month:1,hour:10,wx:"clear",flood:0});
-  S.inbox=SIMx.genProposals(E,3);}
+  S.inbox=SIMx.genProposals(E,3);S.pressing=[];S.advisors=SIMx.advisorPitches();}
   $("#loading").classList.add("hidden");["#top","#left","#right","#tray","#zoomBtns"].forEach(s=>$(s).classList.remove("hidden"));$("#minimap").style.display="block";
   $("#seal").textContent={nyc:"NY",chi:"CHI",sf:"SF",sea:"SEA",sd:"SD"}[key];
   $("#cityName").textContent=(name?name+", Mayor of ":"Mayor of ")+C.name;$("#cityArea").textContent=C.area;
@@ -70,7 +70,8 @@ function renderTop(){
   const ap=$("#mApp");ap.textContent=Math.round(m.approval)+"%";ap.className=m.approval>=50?"up":"dn";
   $("#mRes").textContent=fmt$(Math.abs(m.reserve)).replace("$",m.reserve<0?"−$":"$");$("#mRes").className=m.reserve<0?"dn":"";
   const bal=m.revenue-m.spend;$("#mBal").textContent=(bal<0?"−":"+")+fmt$(Math.abs(bal));$("#mBal").className=bal<0?"dn":"up";
-  const n=S.inbox.length;$("#deskN").textContent=n;$("#deskN").style.display=n?"":"none";
+  const n=S.inbox.length+(S.pressing||[]).length+(S.advisors||[]).length;$("#deskN").textContent=n;$("#deskN").style.display=n?"":"none";
+  const pr=(S.pressing||[]).length,nb=$("#next");nb.textContent=pr?`Resolve ${pr} pressing issue${pr>1?"s":""}`:"Next quarter →";nb.classList.toggle("warnbtn",!!pr);
 }
 
 /* ---------- left panel ---------- */
@@ -82,11 +83,22 @@ function renderLeft(){
   if(leftTab==="desk"){
     const items=S.inbox.map(p=>{const age=S.q-p.q;const c=p.cost||{};const costTxt=c.private?fmt$(c.private)+" private":c.total?fmt$(c.total)+" total":c.city?fmt$(c.city)+" city":c.annual?fmt$(c.annual)+"/yr":"No cost";
       return `<button class="card stripe" type="button" data-id="${p.id}" style="--k:${TYPECOL[p.type]}"><div class="row"><span class="tag" style="color:${TYPECOL[p.type]}">${TYPELBL[p.type]}</span><span class="meta">${age>=2?'<span class="dn">expires soon</span>':age?"waiting "+age+"q":"new"}</span></div><div class="ttl">${esc(p.title)}</div><div class="meta"><span>${esc(p.where||"")}</span><span>${costTxt}</span></div></button>`;}).join("");
-    el.innerHTML=`<div class="eyebrow">Awaiting your decision</div>${items||'<p class="empty">Your desk is clear. Start something yourself below, or move to the next quarter.</p>'}
+    const press=(S.pressing||[]).map(ev=>`<button class="card stripe press" type="button" data-ev="${ev.id}" style="--k:var(--bad)"><div class="row"><span class="tag" style="color:var(--bad)">Pressing · must decide</span></div><div class="ttl">${esc(ev.e.t)}</div><div class="meta"><span>${esc(ev.e.d.slice(0,90))}${ev.e.d.length>90?"…":""}</span></div></button>`).join("");
+    const adv=(S.advisors||[]).map(a=>{const d=SIMx.POLICY[a.k];return `<div class="card stripe adv" style="--k:#7C3AED"><div class="row"><span class="tag" style="color:#7C3AED">${esc(a.name)} · ${esc(a.role==="Chief of Staff"?a.role:a.role+" advisor")}</span>${a.group?`<span class="meta">for ${esc(a.group.toLowerCase())}</span>`:""}</div><div class="ttl">${esc(d.label)}</div><p class="pitch">“${esc(a.pitch)}”</p><div class="meta"><span>${esc(a.costTxt)}</span></div><div class="lbtns"><button class="btn sm good" type="button" data-advyes="${a.id}">Do it</button><button class="btn sm" type="button" data-advmore="${a.id}">Details</button><button class="btn sm" type="button" data-advno="${a.id}">Not now</button></div></div>`;}).join("");
+    const lastR=(S.reports||[]).slice(-1)[0];
+    el.innerHTML=`${lastR?`<button class="btn sm" type="button" data-report="${S.reports.length-1}" style="align-self:flex-start">📋 ${SIMx.qLabel(lastR.q-1)} report</button>`:""}
+      ${press?`<div class="eyebrow" style="color:var(--bad)">Pressing issues</div>${press}`:""}
+      ${adv?`<div class="eyebrow">Your advisors suggest</div>${adv}`:""}
+      <div class="eyebrow">Proposals awaiting your decision</div>${items||'<p class="empty">No proposals right now. Start something yourself below, or move to the next quarter.</p>'}
       <div class="eyebrow" style="margin-top:6px">Start an initiative</div>
+      <button class="btn primary" type="button" data-catalog="1" style="text-align:left">Policies & programs <span style="opacity:.75;font-weight:500">· ${Object.keys(SIMx.POLICY).length} options · ${(S.policies||[]).filter(a=>a.on).length} active</span></button>
       <div class="tools"><button class="btn" type="button" data-tool="upzone">Rezone an area</button><button class="btn" type="button" data-tool="park">Create a park</button><button class="btn" type="button" data-tool="buslanes">Bus lanes on a street</button><button class="btn" type="button" data-tool="ai">Ask the AI traffic planner</button></div>`;
   }else if(leftTab==="budget"){
-    const rows=SIMx.LEVERS.map(L=>{const v=S.pol[L.k];const cost=SIMx.leverCost(L.k,v);return `<div class="lever"><div class="row"><span>${L.label}</span><span class="num">${L.fmt(v)}</span></div><input type="range" data-k="${L.k}" min="${L.min}" max="${L.max}" step="${L.step}" value="${v}" aria-label="${L.label}"><small>${cost?(cost>0?"Costs ":"Raises ")+fmt$(Math.abs(cost))+"/yr. ":""}${L.note}</small></div>`;}).join("");
+    const TAXK=new Set(["propTax","bizTax","salesTax","hotelTax","fees"]);
+    const lev=L=>{const v=S.pol[L.k]||0;const cost=SIMx.leverCost(L.k,v);return `<div class="lever"><div class="row"><span>${L.label}</span><span class="num">${L.fmt(v)}</span></div><input type="range" data-k="${L.k}" min="${L.min}" max="${L.max}" step="${L.step}" value="${v}" aria-label="${L.label}"><small>${cost?(cost>0?"Costs ":"Raises ")+fmt$(Math.abs(cost))+"/yr. ":""}${L.note}</small></div>`;};
+    const rows=`<div class="eyebrow">Spending & services</div>${SIMx.LEVERS.filter(L=>!TAXK.has(L.k)).map(lev).join("")}<div class="eyebrow">Taxes & revenue</div>${SIMx.LEVERS.filter(L=>TAXK.has(L.k)).map(lev).join("")}
+      <div class="lever"><div class="row"><span>Borrow: general obligation bond</span><span class="num">${fmt$(S.genBond||0)} issued</span></div><div class="lbtns"><button class="btn sm" type="button" data-bond=".01">Issue ${fmt$(S.base.budget*.01)}</button><button class="btn sm" type="button" data-bond=".03">Issue ${fmt$(S.base.budget*.03)}</button></div><small>Cash now, ~7.5% of the amount every year in debt service. Homeowners and businesses dislike new debt.</small></div>
+      ${(S.policies||[]).some(a=>a.on&&(SIMx.POLICY[a.k].fx.revenue||SIMx.POLICY[a.k].fx.annual))?`<div class="eyebrow">Active policies in the budget</div>${S.policies.filter(a=>a.on).map(a=>{const c=SIMx.policyCost(a.k);const net=c.revenue-c.annual;return net?`<div class="row" style="display:flex;justify-content:space-between;font-size:12.5px"><span>${esc(SIMx.POLICY[a.k].label)}</span><b class="num ${net>0?"up":"dn"}">${net>0?"+":"−"}${fmt$(Math.abs(net))}/yr</b></div>`:"";}).join("")}`:""}`;
     const m=S.m;el.innerHTML=`<div class="kv"><div><span>Revenue</span><b>${fmt$(m.revenue)}/yr</b></div><div><span>Spending</span><b>${fmt$(m.spend)}/yr</b></div><div><span>Reserve</span><b class="${m.reserve<0?"dn":""}">${fmt$(m.reserve)}</b></div><div><span>Bond debt</span><b>${fmt$(m.debt)}</b></div></div>${rows}<p class="note">Changes take effect next quarter. Running down the reserve below zero hurts your approval and credit.</p>`;
   }else if(leftTab==="projects"){
     const pr=S.projects.slice().reverse();
@@ -95,11 +107,19 @@ function renderLeft(){
     if(zs)el.innerHTML+=`<div class="eyebrow">Rezoned areas</div>`+zs;
   }else if(leftTab==="transit"){el.innerHTML=transitTab();
   }else{
-    el.innerHTML=S.news.length?S.news.map(n=>`<div class="card stripe" style="--k:${n.kind==="ok"?"var(--good)":n.kind==="deny"?"var(--muted)":"var(--warn)"}"><div class="meta">${SIMx.qLabel(n.q)} · ${esc(n.where)}</div><div class="ttl" style="font-weight:600">${esc(n.t)}</div></div>`).join(""):'<p class="empty">No news yet.</p>';
+    const reps=(S.reports||[]).map((r,i)=>`<button class="btn sm" type="button" data-report="${i}">${SIMx.qLabel(r.q-1)}</button>`).reverse().join("");
+    el.innerHTML=(reps?`<div class="eyebrow">Quarterly reports</div><div class="lbtns" style="flex-wrap:wrap">${reps}</div><div class="eyebrow">Headlines</div>`:"")+(S.news.length?S.news.map(n=>`<div class="card stripe" style="--k:${n.kind==="ok"?"var(--good)":n.kind==="deny"?"var(--muted)":"var(--warn)"}"><div class="meta">${SIMx.qLabel(n.q)} · ${esc(n.where)}</div><div class="ttl" style="font-weight:600">${esc(n.t)}</div></div>`).join(""):'<p class="empty">No news yet.</p>');
   }
 }
 $("#left").addEventListener("click",e=>{
   const t=e.target.closest(".tabs button");if(t){leftTab=t.dataset.t;renderLeft();return;}
+  const evb=e.target.closest("[data-ev]");if(evb){const ev=(S.pressing||[]).find(x=>x.id===evb.dataset.ev);if(ev)showEvent(ev).then(renderAll);return;}
+  const rp=e.target.closest("[data-report]");if(rp){reportModal(S.reports[+rp.dataset.report]);return;}
+  if(e.target.closest("[data-catalog]")){policyCatalog();return;}
+  const ay=e.target.closest("[data-advyes]");if(ay){const a=S.advisors.find(x=>x.id===ay.dataset.advyes);if(a){SIMx.enactPolicy(a.k);S.advisors=S.advisors.filter(x=>x!==a);toast(`<b>Enacted:</b> ${esc(SIMx.POLICY[a.k].label)}`);renderAll();}return;}
+  const am=e.target.closest("[data-advmore]");if(am){const a=S.advisors.find(x=>x.id===am.dataset.advmore);if(a)policyModal(a.k,a);return;}
+  const an=e.target.closest("[data-advno]");if(an){S.advisors=S.advisors.filter(x=>x.id!==an.dataset.advno);renderAll();return;}
+  const bd=e.target.closest("[data-bond]");if(bd){const amt=SIMx.issueBond(+bd.dataset.bond);toast(`Issued ${fmt$(amt)} in bonds.`);renderAll();return;}
   const c=e.target.closest("[data-id]");if(c){const p=S.inbox.find(x=>x.id==c.dataset.id);if(p)openDetail(p);return;}
   const pj=e.target.closest("[data-proj]");if(pj){const p=S.projects.find(x=>x.id==pj.dataset.proj);if(p&&p.x!=null)E.flyTo(p.x,p.z,900);return;}
   const tl=e.target.closest("[data-tool]");if(tl)startTool(tl.dataset.tool);
@@ -186,6 +206,14 @@ function preview(p){
 }
 function forecastFor(p){return SIMx.forecast(st=>SIMx.applyProposal(st,p,currentOpt),12);}
 const FCROWS=[["rent","Typical rent",v=>money(v),-1],["homeless","Homeless count",v=>fmtK(v),-1],["violent","Violent crime /100k",v=>v.toFixed(0),-1],["jobs","Jobs",v=>fmtK(v),1],["units","Housing units",v=>fmtK(v),1],["congestion","Congestion level",v=>v.toFixed(1)+"%",-1],["transit","Transit riders/day",v=>fmtK(v),1],["reserve","City reserve",v=>fmt$(v),1],["approval","Your approval",v=>v.toFixed(0)+"%",1]];
+function fcTable(fc,l0,l1){
+  const rows=FCROWS.map(([k,l,f,g])=>{const a=fc[k].base,b=fc[k].with;const dv=b-a;const rel=Math.abs(a)>1e-9?dv/Math.abs(a):0;const tiny=Math.abs(rel)<.0005&&Math.abs(dv)<.05;const cls=tiny?"neu":(dv*g>0?"up":"dn");
+    const dtxt=tiny?"—":(k==="approval"||k==="congestion"?(dv>=0?"+":"")+dv.toFixed(1):(Math.abs(rel)<.001?(dv>=0?"+":"")+f(dv).replace("$-","−$"):pct(rel)));
+    const rg=fc[k].lo!=null?`<span class="rng">${f(fc[k].lo)} – ${f(fc[k].hi)}</span>`:"";
+    return `<tr><td>${l}</td><td>${f(a)}</td><td>${f(b)}${rg}</td><td class="${cls}">${dtxt}</td></tr>`;}).join("");
+  const gr=fc.groups?`<div class="eyebrow">Approval by group in 3 years</div><div class="groups">${SIMx.GROUPS.map((g,i)=>{const d=fc.groups.with[i]-fc.groups.base[i];return `<span>${g}</span><b class="num ${Math.abs(d)<.3?"neu":d>0?"up":"dn"}">${Math.round(fc.groups.with[i])}% <small>${Math.abs(d)<.3?"±0":(d>0?"+":"")+d.toFixed(1)}</small></b>`;}).join("")}</div>`:"";
+  return `<table class="fc"><thead><tr><th>In 3 years</th><th>${l0||"If denied"}</th><th>${l1||"If approved"} <small>(likely range)</small></th><th>Change</th></tr></thead><tbody>${rows}</tbody></table>${gr}`;
+}
 function renderDetail(){
   const p=current;if(!p)return;const d=$("#detail");const c=p.cost||{};
   const kv=[];
@@ -196,12 +224,12 @@ function renderDetail(){
   if(p.dur)kv.push(["Timeline",p.dur+" quarter"+(p.dur>1?"s":"")]);
   const opts=p.options?`<div class="eyebrow">Choose an intervention</div>${p.options.map((o,i)=>`<label class="opt"><input type="radio" name="aiopt" value="${i}" ${i===currentOpt?"checked":""}><div><b>${esc(o.label)} · ${fmt$(o.cost)}</b><span>${esc(o.desc)}<br><i>${esc(o.evidence)}</i></span></div></label>`).join("")}`:"";
   const sup=p.support?Object.entries(p.support).filter(([,v])=>v).map(([k,v])=>`<span class="pill" style="font-size:11.5px"><span class="${v>0?"up":"dn"}">${v>0?"Supports":"Opposes"}</span> ${esc(k)}</span>`).join(" "):"";
-  let fc='<p class="empty">Forecasting four years ahead…</p>';
-  if(p._fc){fc=`<table class="fc"><thead><tr><th>In 4 years</th><th>If denied</th><th>If approved</th><th>Change</th></tr></thead><tbody>${FCROWS.map(([k,l,f,g])=>{const a=p._fc[k].base,b=p._fc[k].with;const dv=b-a;const rel=Math.abs(a)>1e-9?dv/Math.abs(a):0;const tiny=Math.abs(rel)<.0005&&Math.abs(dv)<.05;const cls=tiny?"neu":(dv*g>0?"up":"dn");const dtxt=tiny?"—":(k==="approval"||k==="congestion"?(dv>=0?"+":"")+dv.toFixed(1):(Math.abs(rel)<.001?(dv>=0?"+":"")+f(dv).replace("$-","−$"):pct(rel)));return `<tr><td>${l}</td><td>${f(a)}</td><td>${f(b)}</td><td class="${cls}">${dtxt}</td></tr>`;}).join("")}</tbody></table>`;}
+  let fc='<p class="empty">Forecasting three years ahead…</p>';
+  if(p._fc){fc=fcTable(p._fc);}
   d.innerHTML=`<div class="hd"><div class="row" style="display:flex;justify-content:space-between;gap:8px"><span class="tag" style="color:${TYPECOL[p.type]}">${TYPELBL[p.type]}</span><button class="btn sm" type="button" data-act="close">Close</button></div><h2>${esc(p.title)}</h2><div class="meta" style="font-size:12px;color:var(--muted)">${esc(p.sponsor||"")} · ${esc(p.where||"")}${p.hood&&p.where!==p.hood?" · "+esc(p.hood):""}</div></div>
   <div class="scroll"><p style="margin:0;line-height:1.55">${esc(p.summary||"")}</p>${kv.length?`<div class="kv">${kv.map(([a,b])=>`<div><span>${a}</span><b>${b}</b></div>`).join("")}</div>`:""}${opts}
   ${p.notes?`<p class="note">${esc(p.notes)}</p>`:""}${sup?`<div style="display:flex;gap:6px;flex-wrap:wrap">${sup}</div>`:""}
-  <div class="eyebrow">Forecast · model run 12 quarters ahead</div>${fc}<p class="note">The forecast holds your current budget and policies fixed and leaves out random events. Blue on the map shows what would be built; buildings it replaces are hidden while you preview.</p></div>
+  <div class="eyebrow">Forecast · model run 12 quarters ahead</div>${fc}<p class="note">The forecast holds your budget and policies fixed. The likely range replays the decision under five different runs of luck: overruns, delays, the economy, crime swings. Even a good call can land at the bad end. Blue on the map shows what would be built; buildings it replaces are hidden while you preview.</p></div>
   <div class="ft"><button class="btn good" type="button" data-act="yes">Approve</button><button class="btn bad" type="button" data-act="no">Deny</button>${p.x!=null?'<button class="btn" type="button" data-act="look">Show on map</button>':""}<button class="btn" type="button" data-act="later">Decide later</button></div>`;
 }
 $("#detail").addEventListener("click",e=>{
@@ -251,6 +279,7 @@ function renderAll(){renderTop();renderLeft();renderRight();if(overlayKey!=="non
 const MONTH_OF_Q=[1,4,7,10];
 $("#next").onclick=async()=>{
   if(busy||!S)return;if(S.ended&&!S.extended){return;}
+  if((S.pressing||[]).length){const ev=S.pressing[0];await showEvent(ev);renderAll();return;}
   busy=true;closeDetail();
   // expire old proposals
   const exp=S.inbox.filter(p=>S.q-p.q>=3);for(const p of exp){SIMx.news(`${p.sponsor} withdrew: ${p.title}`,p.where,"deny");if(p.type==="tower")S.deniedN++;}
@@ -261,21 +290,86 @@ $("#next").onclick=async()=>{
     zone:(z,f)=>E.zoneStep(z.id,f)});
   E.setEnv({month:MONTH_OF_Q[S.q%4],wx:"clear",flood:0});
   refreshTraffic();
+  const rep=S.reports[S.reports.length-1];if(rep)rep.done=done.map(d=>d.title);
   renderAll();
-  const ev=SIMx.rollEvent();
-  if(ev)await showEvent(ev);
-  const nNew=2+(Math.random()<.5?1:0);S.inbox.push(...SIMx.genProposals(E,nNew));setTimeout(autosave,0);
+  if(S.q===16&&!S.ended){busy=false;election();return;}
+  if(rep)await reportModal(rep);
+  S.pressing=SIMx.rollEvents();S.advisors=SIMx.advisorPitches();
+  const nNew=1+(Math.random()<.6?1:0);S.inbox.push(...SIMx.genProposals(E,nNew));setTimeout(autosave,0);
   renderAll();
-  toast(`<b>${SIMx.qLabel()}</b> · ${nNew} new item${nNew>1?"s":""} on your desk${done.length?` · ${done.length} project${done.length>1?"s":""} completed`:""}`);
-  if(S.q===16&&!S.ended)election();
+  if(!$("#left").classList.contains("open"))togglePanel("#left");leftTab="desk";renderLeft();
+  toast(`<b>${SIMx.qLabel()}</b>${S.pressing.length?` · ${S.pressing.length} pressing issue${S.pressing.length>1?"s":""}`:""}${S.advisors.length?` · ${S.advisors.length} advisor suggestion${S.advisors.length>1?"s":""}`:""} · ${nNew} new proposal${nNew>1?"s":""}`);
   busy=false;
+  if(S.pressing.length){await showEvent(S.pressing[0]);renderAll();}
 };
 function showEvent(ev){return new Promise(res=>{
   const e=ev.e;if(e.wx)E.setEnv({wx:e.wx});if(e.flood){E.setEnv({flood:e.flood});}
   let extra="";if(e.flood){const fx=E.floodExposure(e.flood);extra=`<p class="note">In the modeled area, buildings housing about ${fmtK(fx.res)} residents and ${fmtK(fx.jobs)} jobs sit below the ${e.flood} m water line.${S.resilience?" Your resilience investments reduce the damage.":""}</p>`;}
-  modal(`<div class="eyebrow">${SIMx.qLabel()} · Breaking</div><h2>${esc(e.t)}</h2><p>${esc(e.d)}</p>${extra}<div class="choices">${e.ch.map((c,i)=>{const cost=c.cost==="fed"?S.base.budget*.25*.08*.25:(c.cost||0)*S.base.budget;return `<button class="btn" type="button" data-ch="${i}"><b>${esc(c.l)}</b>${cost?` <span class="num neu">· ${fmt$(cost)}</span>`:""}</button>`;}).join("")}</div>`,
-  evt=>{const b=evt.target.closest("[data-ch]");if(!b)return;SIMx.resolveEvent(ev,+b.dataset.ch);$("#modalRoot").innerHTML="";renderAll();res();});
+  const gtxt=g=>Object.entries(g||{}).map(([k,v])=>`<span class="${v>0?"up":"dn"}">${k} ${v>0?"+":"−"}</span>`).join(" ");
+  modal(`<div class="eyebrow">${SIMx.qLabel()} · ${e.good?"Good news":"Pressing issue"}</div><h2>${esc(e.t)}</h2><p>${esc(e.d)}</p>${extra}<div class="choices">${e.ch.map((c,i)=>{const cost=c.cost==="fed"?S.base.budget*.25*.08*.25:(c.cost||0)*S.base.budget;
+    return `<button class="btn" type="button" data-ch="${i}"><b>${esc(c.l)}</b>${cost?` <span class="num neu">· ${fmt$(cost)}</span>`:""}${c.g&&Object.keys(c.g).length?`<span class="gchips">${gtxt(c.g)}</span>`:""}${c.risk?`<span class="risk">Risky: about ${Math.round(c.risk[0]*10)} in 10 chance this backfires</span>`:""}</button>`;}).join("")}</div>`,
+  evt=>{const b=evt.target.closest("[data-ch]");if(!b)return;const out=SIMx.resolveEvent(ev,+b.dataset.ch);renderAll();
+    if(out){$("#modalRoot .box").innerHTML=`<div class="eyebrow">${esc(e.t)}</div><h2>${out.bad?"It went badly.":"It held."}</h2><p>${esc(out.t)}</p><button class="btn primary" type="button" data-close>Continue</button>`;$("#modalRoot").onclick=x=>{if(x.target.closest("[data-close]")){$("#modalRoot").innerHTML="";res();}};}
+    else{$("#modalRoot").innerHTML="";res();}});
 });}
+/* ---------- quarterly report ---------- */
+function reportModal(r){return new Promise(res=>{if(!r){res();return;}
+  const M=r.metrics,Q=SIMx.qLabel(r.q-1);const ar=(v,g)=>v>0?(g>0?"up":"dn"):v<0?(g>0?"dn":"up"):"neu";
+  const mrow=(k,l,f,g)=>{const a=M[k].from,b=M[k].to;const d=a?(b-a)/Math.abs(a):0;return `<div class="rm"><span>${l}</span><b>${f(b)}</b><em class="${Math.abs(d)<.0005?"neu":ar(d,g)}">${Math.abs(d)<.0005?"—":(k==="approval"?(b-a>=0?"+":"")+(b-a).toFixed(1)+" pts":pct(d))}</em></div>`;};
+  const grid=[["approval","Approval",v=>Math.round(v)+"%",1],["rent","Typical rent",money,-1],["homeless","Homeless",fmtK,-1],["violent","Violent crime",v=>v.toFixed(0)+"/100k",-1],["jobs","Jobs",fmtK,1],["unemp","Unemployment",v=>v.toFixed(1)+"%",-1],["congestion","Congestion",v=>v.toFixed(1)+"%",-1],["reserve","Reserve",fmt$,1]].map(a=>mrow(...a)).join("");
+  const crime=r.crime.length?r.crime.map(c=>`<li><span>${esc(c.l)}</span><b class="${c.v<0?"up":"dn"}">${c.v>0?"+":""}${(c.v*100).toFixed(1)}%</b></li>`).join(""):'<li><span>No meaningful change in the drivers</span></li>';
+  const H=r.home;const R=r.rent,J=r.jobs,B=r.budget;
+  const rentDrv=[["Housing supply (vacancy)",R.vacancy],["Job growth",R.jobs],["Your policies",R.policy],["Luck",R.luck]].filter(x=>Math.abs(x[1])>.0002).map(([l,v])=>`<li><span>${l}</span><b class="${v<0?"up":"dn"}">${v>0?"+":""}${(v*100).toFixed(2)} pts</b></li>`).join("");
+  const jobDrv=[["Business climate",J.climate],["Your policies & taxes",J.policy],["Luck",J.luck]].filter(x=>Math.abs(x[1])>.0001).map(([l,v])=>`<li><span>${l}</span><b class="${v>0?"up":"dn"}">${v>0?"+":""}${(v*100).toFixed(2)} pts</b></li>`).join("");
+  const groups=r.groups.map(g=>`<div class="rg"><span class="gname">${g.g}</span><b class="${g.d>=.3?"up":g.d<=-.3?"dn":"neu"}">${Math.round(g.to)}% <small>${Math.abs(g.d)<.3?"±0":(g.d>0?"+":"")+g.d.toFixed(1)}</small></b><span class="why">${g.reasons.map(x=>`${esc(x.l)} ${x.v>0?"helped":"hurt"}`).join(" · ")||(Math.abs(g.ev)>.5?(g.ev>0?"Your recent decisions won them over":"Upset by recent decisions"):"Little changed for them")}${g.reasons.length&&Math.abs(g.ev)>.5?` · ${g.ev>0?"liked":"disliked"} recent decisions`:""}</span></div>`).join("");
+  const worked=[],didnt=[];
+  for(const c of r.crime){if(/trend/.test(c.l))continue;if(c.l.startsWith("Luck")){if(Math.abs(c.v)>.01)(c.v<0?worked:didnt).push(`${c.v<0?"Good":"Bad"} luck: unexplained swings ${c.v<0?"lowered":"raised"} violent crime ${Math.abs(c.v*100).toFixed(1)}%`);continue;}(c.v<0?worked:didnt).push(`${c.l} ${c.v<0?"cut":"pushed up"} violent crime ${Math.abs(c.v*100).toFixed(1)}%`);}
+  if(H.hf>5)worked.push(`Supportive housing placed ${fmtK(H.hf)} people`);
+  if(R.vacancy<-.0003)didnt.push(`Tight housing supply added ${(-R.vacancy*100).toFixed(2)} pts to rent growth`);else if(R.vacancy>.0003)worked.push(`New housing supply held rent growth down ${(R.vacancy*100).toFixed(2)} pts`);
+  if(R.policy<-.0003)worked.push(`Your housing policies slowed rent growth ${(-R.policy*100).toFixed(2)} pts`);
+  if(J.policy<-.0002)didnt.push(`Taxes and labor policies trimmed job growth ${(-J.policy*100).toFixed(2)} pts`);
+  const rv=(r.reveals||[]).map(x=>{const lbl=x.lever?{vio:"Violence intervention",police:"Police staffing changes",youth:"Youth programs",homeless:"Homeless services",crisis:"Crisis response teams",hf:"Supportive housing"}[x.k]:SIMx.POLICY[x.k].label;const t=x.eff>1.2?"is outperforming expectations":x.eff<.8?"is underperforming expectations":"is working about as expected";return `<li class="${x.eff>1.2?"up":x.eff<.8?"dn":""}">${esc(lbl)} ${t} (${Math.round(x.eff*100)}% of the projected effect).</li>`;}).join("");
+  const sur=(r.surprises||[]).map(x=>`<li class="${x.bad?"dn":"up"}"><b>${esc(x.t)}</b>${x.choice?` — you chose “${esc(x.choice)}”`:""}: ${esc(x.text)}</li>`).join("");
+  modal(`<div class="report"><div class="eyebrow">Quarterly report · ${Q}</div><h2>${M.approval.to>=M.approval.from?"A steady quarter.":"A rough quarter."} Approval ${Math.round(M.approval.to)}%.</h2>
+  <div class="rmgrid">${grid}</div>
+  ${worked.length||didnt.length?`<div class="cols"><div><div class="eyebrow up">What worked</div><ul class="bl">${worked.map(t=>`<li>${esc(t)}</li>`).join("")||"<li>Nothing stood out</li>"}</ul></div><div><div class="eyebrow dn">What didn't</div><ul class="bl">${didnt.map(t=>`<li>${esc(t)}</li>`).join("")||"<li>Nothing stood out</li>"}</ul></div></div>`:""}
+  ${sur?`<div class="eyebrow">Unforeseen</div><ul class="bl">${sur}</ul>`:""}
+  ${rv?`<div class="eyebrow">What we're learning</div><ul class="bl">${rv}</ul>`:""}
+  <div class="eyebrow">How each group feels</div><div class="rgroups">${groups}</div>
+  <details><summary>Why the numbers moved</summary>
+   <div class="cols"><div><div class="eyebrow">Violent crime ${pct(r.crimeTotal)}</div><ul class="drv">${crime}</ul></div>
+   <div><div class="eyebrow">Homelessness ${H.net>=0?"+":""}${fmtK(H.net)}</div><ul class="drv"><li><span>Newly homeless</span><b class="dn">+${fmtK(H.inflow)}</b></li><li><span>Found housing via services</span><b class="up">−${fmtK(H.exits)}</b></li>${H.hf>1?`<li><span>Supportive housing</span><b class="up">−${fmtK(H.hf)}</b></li>`:""}</ul></div>
+   <div><div class="eyebrow">Rent ${(R.total*100>=0?"+":"")+(R.total*100).toFixed(2)}% this quarter</div><ul class="drv"><li><span>Underlying trend</span><b>${(R.trend*100).toFixed(2)} pts</b></li>${rentDrv}</ul></div>
+   <div><div class="eyebrow">Jobs ${(J.total*100>=0?"+":"")+(J.total*100).toFixed(2)}%</div><ul class="drv"><li><span>National trend</span><b>${(J.base*100).toFixed(2)} pts</b></li>${jobDrv}</ul></div>
+   <div><div class="eyebrow">Budget</div><ul class="drv"><li><span>Revenue</span><b>${fmt$(B.rev)}/yr</b></li><li><span>Spending</span><b>${fmt$(B.spend)}/yr</b></li>${B.newTax?`<li><span>From new taxes & policies</span><b class="up">+${fmt$(B.newTax)}/yr</b></li>`:""}${B.pol?`<li><span>Cost of your programs</span><b class="dn">${fmt$(B.pol)}/yr</b></li>`:""}</ul></div></div>
+  </details>
+  ${(r.done||[]).length?`<p class="note">Completed this quarter: ${r.done.map(esc).join(", ")}.</p>`:""}
+  <button class="btn primary" type="button" data-close style="margin-top:6px">Continue to ${SIMx.qLabel(r.q)}</button></div>`,e=>{if(e.target.closest("[data-close]"))res();});
+});}
+/* ---------- policies & programs ---------- */
+function policyCatalog(){
+  const cats={};for(const [k,d] of Object.entries(SIMx.POLICY)){(cats[d.cat]=cats[d.cat]||[]).push([k,d]);}
+  const act=k=>(S.policies||[]).find(a=>a.k===k&&a.on);
+  const chips=d=>Object.entries(d.groups).map(([g,v])=>`<span class="${v>0?"up":"dn"}">${g} ${v>0?"+":"−"}</span>`).join(" ");
+  const cost=k=>{const c=SIMx.policyCost(k);return [c.once>0?fmt$(c.once)+" once":"",c.once<0?"+"+fmt$(-c.once)+" once":"",c.annual?fmt$(c.annual)+"/yr":"",c.revenue?"+"+fmt$(c.revenue)+"/yr":""].filter(Boolean).join(" · ")||"No direct cost";};
+  modal(`<div class="eyebrow">Mayor's toolbox</div><h2>Policies & programs</h2><p class="note">Every program has uncertain results: the real effect is revealed after it has run a couple of quarters. Group chips show who it pleases (+) or angers (−).</p>
+   ${Object.entries(cats).map(([c,list])=>`<div class="eyebrow">${c}</div><div class="plist">${list.map(([k,d])=>`<button class="card prow ${act(k)?"on":""}" type="button" data-pol="${k}"><div class="row"><b>${esc(d.label)}</b><span class="meta">${act(k)?'<span class="up">Active</span>':esc(cost(k))}</span></div><div class="meta" style="display:block">${esc(d.desc)}</div><div class="gchips">${chips(d)}</div></button>`).join("")}</div>`).join("")}
+   <button class="btn" type="button" data-close>Close</button>`,e=>{const b=e.target.closest("[data-pol]");if(b)policyModal(b.dataset.pol);});
+}
+function policyModal(k,adv){
+  const d=SIMx.POLICY[k];const on=(S.policies||[]).find(a=>a.k===k&&a.on);const c=SIMx.policyCost(k);
+  const body=fc=>`<div class="eyebrow">${esc(d.cat)}${adv?` · suggested by ${esc(adv.name)}`:""}</div><h2>${esc(d.label)}</h2><p>${esc(d.desc)}</p>
+   <div class="kv">${c.once>0?`<div><span>Up-front cost</span><b>${fmt$(c.once)}</b></div>`:""}${c.once<0?`<div><span>One-time revenue</span><b class="up">${fmt$(-c.once)}</b></div>`:""}${c.annual?`<div><span>Yearly cost</span><b>${fmt$(c.annual)}</b></div>`:""}${c.revenue?`<div><span>Yearly revenue</span><b class="up">${fmt$(c.revenue)}</b></div>`:""}<div><span>Certainty</span><b>${d.sd<.3?"High":d.sd<.42?"Medium":"Low"}</b></div></div>
+   <div class="gchips">${Object.entries(d.groups).map(([g,v])=>`<span class="${v>0?"up":"dn"}">${g} ${v>0?"+":"−"}${Math.abs(v)>=.2?(v>0?"+":"−"):""}</span>`).join(" ")}</div>
+   ${d.ev?`<p class="note">${esc(d.ev)}</p>`:""}
+   ${on?`<p class="note">Active since ${SIMx.qLabel(on.q)}.${on.revealed?` Running at ${Math.round(on.eff*100)}% of the projected effect.`:" Too early to know how well it's working."}</p>`:`<div class="eyebrow">Forecast · 3 years</div>${fc?fcTable(fc,"Without it","With it"):'<p class="empty">Forecasting…</p>'}`}
+   <div class="lbtns">${on?`<button class="btn bad" type="button" data-repeal>Repeal</button>`:`<button class="btn good" type="button" data-enact>Enact</button>`}<button class="btn" type="button" data-back>Back</button></div>`;
+  modal(body(null),e=>{
+    if(e.target.closest("[data-enact]")){SIMx.enactPolicy(k);if(adv)S.advisors=S.advisors.filter(x=>x!==adv);$("#modalRoot").innerHTML="";toast(`<b>Enacted:</b> ${esc(d.label)}`);renderAll();}
+    if(e.target.closest("[data-repeal]")){SIMx.repealPolicy(k);$("#modalRoot").innerHTML="";toast(`Repealed: ${esc(d.label)}`);renderAll();}
+    if(e.target.closest("[data-back]")){if(adv)$("#modalRoot").innerHTML="";else policyCatalog();}});
+  if(!on)setTimeout(()=>{const fc=SIMx.forecast(st=>SIMx.enactPolicy(k,st),12);const box=$("#modalRoot .box");if(box&&box.querySelector("[data-enact]"))box.innerHTML=body(fc);},30);
+}
 function election(){
   S.ended=true;const m=S.m,h0=S.hist[0];const won=m.approval>=50;
   const row=(l,a,b,f,g)=>{const dv=(b-a)/Math.abs(a);return `<tr><td>${l}</td><td>${f(a)}</td><td>${f(b)}</td><td class="${Math.abs(dv)<.002?"neu":dv*g>0?"up":"dn"}">${pct(dv)}</td></tr>`;};

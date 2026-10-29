@@ -1231,6 +1231,7 @@ function placeLabels(){
   if(E.labelsOn.lm&&dist<6500)for(const L of lmL){const p=proj(L.x,L.y,L.z);if(p)want.push({cls:"lbl lm",html:`${L.n}<small>${L.h} m</small>`,x:p[0],y:p[1],rot:0,pri:1,P:[L.x,L.y,L.z]});}
   if(dist<9000)for(const L of E.transitLabels()){const p=proj(L.x,Math.max(0,elevAt(L.x,L.z))+22,L.z);if(p)want.push({cls:"lbl stn",html:esc0(L.n||"Station"),x:p[0],y:p[1],rot:0,pri:1.5+(L.lines&&L.lines.length>2?-.2:0),P:[L.x,Math.max(0,elevAt(L.x,L.z))+22,L.z]});}
   if(E.labelsOn.hood&&dist>500&&dist<11000)for(const L of hoodL){const p=proj(L.x,L.y+Math.min(dist*.04,200),L.z);if(p)want.push({cls:"lbl hood",html:L.n,x:p[0],y:p[1],rot:0,pri:2,P:[L.x,L.y+Math.min(dist*.04,200),L.z]});}
+  if(E.labelsOn.street&&dist<1800)for(const L of schoolL){const y=elevAt(L.x,L.z)+4;const p=proj(L.x,y,L.z);if(p)want.push({cls:"lbl school",html:esc0(L.n),x:p[0],y:p[1],rot:0,pri:2.6-Math.min(.4,L.A/2e5),P:[L.x,y,L.z]});}
   if(E.labelsOn.street&&dist<2600){
     const t=controls.target,R=dist*1.4;const bx0=Math.floor((t.x-R+EXT)/500),bx1=Math.floor((t.x+R+EXT)/500),bz0=Math.floor((t.z-R+EXT)/500),bz1=Math.floor((t.z+R+EXT)/500);
     const cand=[];for(let i=bx0;i<=bx1;i++)for(let j=bz0;j<=bz1;j++){const arr=anchorGrid.get(i+","+j);if(arr)for(const a of arr)cand.push(a);}
@@ -1275,8 +1276,8 @@ function parseOSM(bb,rd,ar){
   for(let i=0;i<n;i++){const nv=dv.getUint16(o,true),hd=dv.getUint16(o+2,true),mh=dv.getUint16(o+4,true),lv=dv.getUint8(o+6),ty=dv.getUint8(o+7),part=dv.getUint8(o+8);o+=10;
     const pts=new Float32Array(nv*2);for(let k=0;k<nv*2;k++){pts[k]=dv.getInt16(o,true)*OQ;o+=2;}
     bl[i]={pts,h:hd/10,mh:mh/10,lv,ty,part};}
-  const roads=rd.ways.map(w=>({ty:w[0],lanes:w[1],fl:w[2],n:rd.names[w[3]]||"",pts:ptsFrom(w[4])})).filter(r=>r.pts.length>1);
-  return {bl,roads,parks:(ar.parks||[]).map(p=>({k:p[0],pts:ptsFrom(p[1])})),water:(ar.water||[]).map(p=>({k:p[0],pts:ptsFrom(p[1])})),coast:(ar.coast||[]).map(ptsFrom),islands:(ar.islands||[]).map(p=>({k:p[0],pts:ptsFrom(p[1])})),rail:(ar.rail||[]).map(r=>({k:r[0],tunnel:r[1],pts:ptsFrom(r[2])}))};
+  const roads=rd.ways.map(w=>({ty:w[0],lanes:w[1],fl:w[2],layer:(w[2]>>4)&7,floating:!!(w[2]&8),n:rd.names[w[3]]||"",pts:ptsFrom(w[4])})).filter(r=>r.pts.length>1);
+  return {bl,roads,sports:(ar.sports||[]).map(p=>({k:p[0],sport:p[1],surf:p[2],pts:ptsFrom(p[3])})),tracks:(ar.tracks||[]).map(p=>({area:p[0],pts:ptsFrom(p[2])})),schools:(ar.schools||[]).map(p=>({n:p[0],k:p[1],pts:ptsFrom(p[2])})),parks:(ar.parks||[]).map(p=>({k:p[0],pts:ptsFrom(p[1])})),water:(ar.water||[]).map(p=>({k:p[0],pts:ptsFrom(p[1])})),coast:(ar.coast||[]).map(ptsFrom),islands:(ar.islands||[]).map(p=>({k:p[0],pts:ptsFrom(p[1])})),rail:(ar.rail||[]).map(r=>({k:r[0],tunnel:r[1],pts:ptsFrom(r[2])}))};
 }
 const RT_LANES=[3,2,2,2,2,2,1,1,1,1];
 function roadW(r){const L=r.lanes||RT_LANES[r.ty]||2;let w=L*3.3;if(r.ty>=2&&r.ty<=5)w+=3.5;if(r.ty===6)w=Math.max(4.5,w*.8);if(r.ty===7)w=6;return w;}
@@ -1452,6 +1453,57 @@ function buildOSMAnchors(){
 /* ---- 3D roads: crisp asphalt ribbons, sidewalks, and elevated decks with parapets and piers ---- */
 function densify(pts,step){const o=[pts[0]];for(let k=1;k<pts.length;k++){const a=pts[k-1],b=pts[k];const n=Math.ceil(Math.hypot(b[0]-a[0],b[1]-a[1])/step);for(let j=1;j<=n;j++)o.push([lerp(a[0],b[0],j/n),lerp(a[1],b[1],j/n)]);}return o;}
 function deckAt(w,seg,x,z){const a=w.pts[seg],b=w.pts[seg+1]||a;const L=Math.hypot(b[0]-a[0],b[1]-a[1])||1;const t=clamp(Math.hypot(x-a[0],z-a[1])/L,0,1);return lerp(w.base[seg]+w.hs[seg],w.base[seg+1]+w.hs[seg+1],t);}
+// Tunnels: a faint dashed trace of the route underground plus a concrete portal where it dives in
+function buildTunnels(){
+  const ends=new Map();const k=p=>Math.round(p[0])+","+Math.round(p[1]);
+  for(const r of OSM.roads){if(r.ty===7||r.ty>9)continue;for(const p of [r.pts[0],r.pts[r.pts.length-1]]){const kk=k(p);if(!ends.has(kk))ends.set(kk,[]);ends.get(kk).push(r);}}
+  const trace=[],portals=[];
+  for(const r of OSM.roads){if(!(r.fl&4)||r.ty===7||r.ty>9||r.ty===6)continue;if(!r.pts.some(p=>Math.abs(p[0])<EXT&&Math.abs(p[1])<EXT))continue;
+    const w=r.w||roadW(r);const dp=densify(r.pts,10);let acc=0;
+    for(let i=0;i<dp.length-1;i++){const a=dp[i],b=dp[i+1];const L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(Math.floor(acc/18)%2===0)trace.push([a,b,w*.55]);acc+=L;}
+    for(const end of [0,1]){const p=end?r.pts[r.pts.length-1]:r.pts[0],q=end?r.pts[r.pts.length-2]:r.pts[1];const nb=ends.get(k(p))||[];
+      if(nb.some(o=>o!==r&&!(o.fl&4)))portals.push([p,Math.atan2(q[1]-p[1],q[0]-p[0]),w]);}}
+  if(trace.length){const arr=[];for(const [a,b,w] of trace){const dx=b[0]-a[0],dz=b[1]-a[1],L=Math.hypot(dx,dz)||1,ox=-dz/L*w/2,oz=dx/L*w/2;const ya=elevAt(a[0],a[1])+.14,yb=elevAt(b[0],b[1])+.14;
+      arr.push(a[0]+ox,ya,a[1]+oz,a[0]-ox,ya,a[1]-oz,b[0]+ox,yb,b[1]+oz,a[0]-ox,ya,a[1]-oz,b[0]-ox,yb,b[1]-oz,b[0]+ox,yb,b[1]+oz);}
+    const g=new T.BufferGeometry();g.setAttribute("position",new T.Float32BufferAttribute(arr,3));
+    const m=new T.Mesh(g,new T.MeshBasicMaterial({color:0x3d4148,transparent:true,opacity:.28,depthWrite:false,side:T.DoubleSide,polygonOffset:true,polygonOffsetFactor:-3,polygonOffsetUnits:-3}));m.renderOrder=2;scene.add(m);}
+  const conc=new T.MeshStandardMaterial({color:new T.Color(0xc9c5bc).convertSRGBToLinear(),roughness:.9}),hole=new T.MeshBasicMaterial({color:0x0b0d10});
+  for(const [p,ang,w] of portals){const g=new T.Group();const y=Math.max(0,elevAt(p[0],p[1]));
+    const head=new T.Mesh(new T.BoxGeometry(2.4,9,w+8),conc);head.position.set(0,4.5,0);head.castShadow=true;g.add(head);
+    const op=new T.Mesh(new T.BoxGeometry(2.6,5.8,w),hole);op.position.set(.1,2.9,0);g.add(op);
+    for(const sd of [-1,1]){const wing=new T.Mesh(new T.BoxGeometry(26,4,1.2),conc);wing.position.set(-13,2,sd*(w/2+3.5));wing.castShadow=true;g.add(wing);}
+    g.position.set(p[0]+Math.cos(ang)*4,y,p[1]+Math.sin(ang)*4);g.rotation.y=-ang+Math.PI;scene.add(g);}
+  E.tunnelStats={trace:trace.length,portals:portals.length};
+}
+// Sports fields, running tracks and school grounds as crisp flat surfaces
+function buildSports(){
+  const groups={};const add=(key,pts,dy)=>{if(pts.length<3)return;const v=pts.map(p=>new T.Vector2(p[0],p[1]));if(T.ShapeUtils.area(v)>0)v.reverse();let tris;try{tris=T.ShapeUtils.triangulateShape(v,[]);}catch(e){return;}
+    const arr=groups[key]=groups[key]||[];for(const t of tris)for(const i of t){const q=v[i];arr.push(q.x,elevAt(q.x,q.y)+dy,q.y);}};
+  const inMapP=pts=>pts.some(p=>Math.abs(p[0])<EXT&&Math.abs(p[1])<EXT);
+  for(const s of OSM.schools||[])if(inMapP(s.pts))add("school",s.pts,.04);
+  for(const t of OSM.tracks||[])if(t.area&&inMapP(t.pts))add("track",t.pts,.18);
+  const lines=[];
+  for(const f of OSM.sports||[]){if(!inMapP(f.pts)||f.k!=="pitch")continue;const sp=f.sport||"";
+    const key=/tennis|pickleball/.test(sp)?"tennis":/basketball/.test(sp)?"court":/baseball|softball/.test(sp)?"diamond":/beachvolleyball|sand/.test(sp+f.surf)?"sand":"turf";add(key,f.pts,.22);
+    if(key==="turf"||key==="tennis"||key==="court")lines.push(f.pts);}
+  const COL={school:0xe6d9bf,track:0xb4553f,turf:0x5d9b4b,tennis:0x4f8a73,court:0x6f8fb0,diamond:0x68a253,sand:0xe3cf9c};
+  for(const key in groups){const g=new T.BufferGeometry();g.setAttribute("position",new T.Float32BufferAttribute(groups[key],3));g.computeVertexNormals();
+    const m=new T.Mesh(g,new T.MeshStandardMaterial({color:new T.Color(COL[key]).convertSRGBToLinear(),roughness:.95,side:T.DoubleSide,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1,transparent:key==="school",opacity:key==="school"?.7:1,depthWrite:key!=="school"}));
+    m.receiveShadow=true;m.renderOrder=key==="school"?1:0;scene.add(m);}
+  // white boundary lines on fields and courts
+  const arr=[];for(const pts of lines){const n=pts.length;let cx=0,cz=0;for(const p of pts){cx+=p[0];cz+=p[1];}cx/=n;cz/=n;
+    const ins=pts.map(p=>{const dx=cx-p[0],dz=cz-p[1],L=Math.hypot(dx,dz)||1,d=Math.min(1.5,L*.08);return [p[0]+dx/L*d,p[1]+dz/L*d];});
+    for(let i=0;i<n;i++){const a=ins[i],b=ins[(i+1)%n];const dx=b[0]-a[0],dz=b[1]-a[1],L=Math.hypot(dx,dz)||1,ox=-dz/L*.25,oz=dx/L*.25;const ya=elevAt(a[0],a[1])+.27,yb=elevAt(b[0],b[1])+.27;
+      arr.push(a[0]+ox,ya,a[1]+oz,a[0]-ox,ya,a[1]-oz,b[0]+ox,yb,b[1]+oz,a[0]-ox,ya,a[1]-oz,b[0]-ox,yb,b[1]-oz,b[0]+ox,yb,b[1]+oz);}}
+  if(arr.length){const g=new T.BufferGeometry();g.setAttribute("position",new T.Float32BufferAttribute(arr,3));scene.add(new T.Mesh(g,new T.MeshBasicMaterial({color:0xf2f2ee,side:T.DoubleSide,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2})));}
+  // running tracks mapped as lines: a 9 m rust ribbon
+  const tr=[];for(const t of OSM.tracks||[]){if(t.area||!inMapP(t.pts))continue;const dp=densify(t.pts,6);for(let i=0;i<dp.length-1;i++){const a=dp[i],b=dp[i+1];const dx=b[0]-a[0],dz=b[1]-a[1],L=Math.hypot(dx,dz)||1,ox=-dz/L*4.5,oz=dx/L*4.5;const ya=elevAt(a[0],a[1])+.18,yb=elevAt(b[0],b[1])+.18;
+    tr.push(a[0]+ox,ya,a[1]+oz,a[0]-ox,ya,a[1]-oz,b[0]+ox,yb,b[1]+oz,a[0]-ox,ya,a[1]-oz,b[0]-ox,yb,b[1]-oz,b[0]+ox,yb,b[1]+oz);}}
+  if(tr.length){const g=new T.BufferGeometry();g.setAttribute("position",new T.Float32BufferAttribute(tr,3));g.computeVertexNormals();scene.add(new T.Mesh(g,new T.MeshStandardMaterial({color:new T.Color(0xb4553f).convertSRGBToLinear(),roughness:.95,side:T.DoubleSide,polygonOffset:true,polygonOffsetFactor:-1.5,polygonOffsetUnits:-1.5})));}
+  // school names as map labels
+  schoolL=[];for(const s of OSM.schools||[]){if(!s.n||!inMapP(s.pts))continue;let A=0,cx=0,cz=0;const P2=s.pts;for(let i=0,j=P2.length-1;i<P2.length;j=i++){const f=P2[j][0]*P2[i][1]-P2[i][0]*P2[j][1];A+=f;cx+=(P2[j][0]+P2[i][0])*f;cz+=(P2[j][1]+P2[i][1])*f;}if(Math.abs(A)<2500)continue;cx/=3*A;cz/=3*A;schoolL.push({n:s.n,x:cx,z:cz,k:s.k,A:Math.abs(A/2)});}
+}
+let schoolL=[];
 function buildOSMRoads(){
   const G=RGRAPH;const pos={asph:[],hwy:[],walk:[],deck:[],side:[],svc:[]};const caps=[];
   const strip=(arr,pts,ys,wid)=>{ // flat ribbon following a polyline, mitred joints
@@ -1468,7 +1520,7 @@ function buildOSMRoads(){
     if(r.fl&4||r.ty===7||r.pts.length<2)continue;if(!r.pts.some(p=>Math.abs(p[0])<EXT-20&&Math.abs(p[1])<EXT-20))continue;const w=r.w||roadW(r);
     if(r.fl&2){ // elevated deck
       const mid=r.pts[Math.floor(r.pts.length/2)];const wet=clsAt(mid[0],mid[1])===0;
-      const H=wet?(r.ty<=1?38:r.ty<=4?16:8):(isHwy(r)?9:r.ty===6?5:6.5);
+      const H=r.floating?1.6:wet?Math.max(r.layer*7,r.ty<=1?38:r.ty<=4?16:8):Math.max(r.layer>1?r.layer*6.5:0,isHwy(r)?9:r.ty===6?5:6.5);
       const cum=[0];for(let k=1;k<r.pts.length;k++)cum.push(cum[k-1]+Math.hypot(r.pts[k][0]-r.pts[k-1][0],r.pts[k][1]-r.pts[k-1][1]));const tot=cum[cum.length-1]||1;
       const c0=(bridgeEnds.get(G.key(r.pts[0]))||0)>1,c1=(bridgeEnds.get(G.key(r.pts[r.pts.length-1]))||0)>1;const tl=Math.min(tot/2,Math.max(40,H*11));
       const sm=u=>u*u*(3-2*u);
@@ -1476,7 +1528,7 @@ function buildOSMRoads(){
       r.hs=cum.map(d=>H*Math.min(c0?1:sm(clamp(d/tl,0,1)),c1?1:sm(clamp((tot-d)/tl,0,1))));
       const ys=r.base.map((b,k)=>b+r.hs[k]+.3);
       const [L,R]=strip(pos.deck,r.pts,ys,w+1.2);wall(pos.side,L,-1.4,1.0);wall(pos.side,R,-1.4,1.0);
-      for(let k=0;k<r.pts.length-1;k++){const a=r.pts[k],b=r.pts[k+1];const sl=Math.hypot(b[0]-a[0],b[1]-a[1]);for(let d=(k?0:18);d<sl;d+=36){const t=d/sl,x=lerp(a[0],b[0],t),z=lerp(a[1],b[1],t),h=lerp(r.hs[k],r.hs[k+1],t);if(h>3.2)piers.push([x,lerp(r.base[k],r.base[k+1],t),z,h-1.4,Math.max(2.2,w*.35),Math.atan2(b[1]-a[1],b[0]-a[0])]);}}
+      for(let k=0;k<r.pts.length-1;k++){const a=r.pts[k],b=r.pts[k+1];const sl=Math.hypot(b[0]-a[0],b[1]-a[1]);for(let d=(k?0:18);d<sl;d+=36){const t=d/sl,x=lerp(a[0],b[0],t),z=lerp(a[1],b[1],t),h=lerp(r.hs[k],r.hs[k+1],t);if(h>3.2&&!r.floating)piers.push([x,lerp(r.base[k],r.base[k+1],t),z,h-1.4,Math.max(2.2,w*.35),Math.atan2(b[1]-a[1],b[0]-a[0])]);}}
       continue;}
     if(r.ty===7||r.ty>9)continue;
     const dp=densify(r.pts,14);const ys=dp.map(p=>elevAt(p[0],p[1]));
@@ -1497,6 +1549,7 @@ function buildOSMRoads(){
   if(piers.length){if(!GEOK.box)GEOK.box=new T.BoxGeometry(1,1,1);const im=new T.InstancedMesh(new T.BoxGeometry(1,1,1),new T.MeshStandardMaterial({color:new T.Color(0xb5b2ab).convertSRGBToLinear(),roughness:.9}),piers.length);
     piers.forEach(([x,y,z,h,wd,a],i)=>{dummy.position.set(x,y+h/2,z);dummy.quaternion.setFromAxisAngle(YV,-a);dummy.scale.set(2.2,h,wd);dummy.updateMatrix();im.setMatrixAt(i,dummy.matrix);});
     im.castShadow=true;im.receiveShadow=true;scene.add(im);}
+  buildTunnels();buildSports();
   E.roadStats={walk:pos.walk.length/9,deckTris:pos.deck.length/9,piers:piers.length};
 }
 function trimLine(pts,d){const L=polyLen(pts);if(L<2*d+6)return null;const at=t=>{let acc=0;for(let k=0;k<pts.length-1;k++){const a=pts[k],b=pts[k+1],l=Math.hypot(b[0]-a[0],b[1]-a[1]);if(acc+l>=t){const u=(t-acc)/(l||1);return [k,[lerp(a[0],b[0],u),lerp(a[1],b[1],u)]];}acc+=l;}return [pts.length-2,pts[pts.length-1]];};
