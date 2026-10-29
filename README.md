@@ -62,6 +62,8 @@ cd tools
 python3 fetch_osm.py sea          # buildings, roads, parks, water, rail (Overpass API)
 python3 fix_water.py              # lakes/bays from multipolygon relations
 python3 fetch_transit.py          # rail route relations and stations
+python3 repack_roads.py           # adds bridge layers, floating bridges, tunnels
+python3 fetch_sports.py           # pitches, running tracks, school grounds
 ./pack_for_web.sh                 # writes data/osm/*.txt
 ```
 
