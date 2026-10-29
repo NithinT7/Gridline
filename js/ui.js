@@ -15,8 +15,8 @@ let S=null, leftTab="desk", rightTab="metrics", current=null, currentOpt=0, over
 /* ---------- start screen ---------- */
 const ISSUES={nyc:"Affordability: rents eat over half of a typical household's income.",chi:"Violence prevention and a transit funding gap.",sf:"Street homelessness and a hollowed-out downtown office market.",sea:"Region's homelessness count is rising; tech job swings.",sd:"Housing costs vs. incomes; airport height limits downtown."};
 function buildStart(){
-  const box=$("#ccards");let sel="nyc";
-  box.innerHTML=GEO.order.map(k=>{const C=GEO.cities[k],b=C.baseline;return `<button class="cc" type="button" data-k="${k}" aria-pressed="${k===sel}"><b>${C.name}</b><span class="s">${esc(C.area)}</span>
+  const box=$("#ccards");let sel="sea";
+  box.innerHTML=["sea","nyc"].map(k=>{const C=GEO.cities[k],b=C.baseline;return `<button class="cc" type="button" data-k="${k}" aria-pressed="${k===sel}"><b>${C.name}</b><span class="s">${esc(C.area)}</span>
     <dl><dt>Population</dt><dd>${fmtK(b.pop)}</dd><dt>Typical home</dt><dd>${moneyK(b.homeValue)}</dd><dt>Homeless count</dt><dd>${fmtK(b.homeless)}${b.homelessScope?"*":""}</dd><dt>Violent crime /100k</dt><dd>${b.violent.toFixed(0)}</dd><dt>Congestion</dt><dd>${b.congestion}%</dd><dt>Budget</dt><dd>$${b.budget}B</dd></dl>
     <span class="issue">${ISSUES[k]}</span></button>`;}).join("");
   box.onclick=e=>{const b=e.target.closest(".cc");if(!b)return;sel=b.dataset.k;$$(".cc").forEach(c=>c.setAttribute("aria-pressed",c.dataset.k===sel));};

@@ -1,6 +1,6 @@
 # Gridline — run a real American city
 
-A browser-based city-management game. Pick **New York, Chicago, San Francisco, Seattle or San Diego**,
+A browser-based city-management game. Pick **Seattle or New York** (Chicago, San Francisco and San Diego data is included but currently hidden),
 take office in January 2027, and govern quarter by quarter through a four-year term that ends in an election.
 
 Every proposal that lands on your desk — towers, rezonings, transit lines, parks, supportive housing,
@@ -64,6 +64,7 @@ python3 fix_water.py              # lakes/bays from multipolygon relations
 python3 fetch_transit.py          # rail route relations and stations
 python3 repack_roads.py           # adds bridge layers, floating bridges, tunnels
 python3 fetch_sports.py           # pitches, running tracks, school grounds
+python3 fetch_paths.py            # footpaths, cycleways, rail with viaducts
 ./pack_for_web.sh                 # writes data/osm/*.txt
 ```
 
